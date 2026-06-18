@@ -1,6 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber } from 'antd';
+import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber, Switch } from 'antd';
 import { api } from '../api';
+
+const JOBS = [
+  { id: 'standup_push', name: '推送站会模板' },
+  { id: 'standup_remind', name: '站会未交提醒' },
+  { id: 'standup_summary', name: '生成站会汇总' },
+  { id: 'overdue_scan', name: '超期任务扫描' },
+  { id: 'daily_summary', name: '群聊日报归纳' },
+  { id: 'dashboard', name: '看板生成与上传' },
+];
 
 const ConfigPage = () => {
   const [form] = Form.useForm();
@@ -10,6 +19,15 @@ const ConfigPage = () => {
 
   useEffect(() => {
     api.fetchConfig().then(data => {
+      // Ensure missing enabled flags default to true for UI display
+      const schedule = { ...data.schedule };
+      JOBS.forEach(job => {
+        if (schedule[`${job.id}_enabled`] === undefined) {
+          schedule[`${job.id}_enabled`] = true;
+        }
+      });
+      data.schedule = schedule;
+
       setOriginalConfig(data);
       form.setFieldsValue(data);
       setLoading(false);
@@ -39,82 +57,138 @@ const ConfigPage = () => {
 
   return (
     <div style={{ padding: '24px', height: '100%', overflow: 'auto' }}>
-      <h2 style={{ marginBottom: 24 }}>系统配置</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <h2 style={{ margin: 0 }}>系统配置</h2>
+        <Button type="primary" onClick={() => form.submit()} loading={saving} size="large">
+          保存配置
+        </Button>
+      </div>
+
       <Form form={form} layout="vertical" onFinish={onFinish}>
-        <Card title="飞书配置" style={{ marginBottom: 20 }}>
-          <Row gutter={24}>
-            <Col span={12}>
-              <Form.Item name={['feishu', 'app_id']} label="应用 ID (App ID)">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name={['feishu', 'app_secret']} label="应用凭证 (App Secret)">
-                <Input.Password />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={24}>
-            <Col span={12}>
-              <Form.Item name={['feishu', 'bot_open_id']} label="机器人 Open ID">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name={['feishu', 'group_chat_id']} label="群聊 ID">
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
+        <Row gutter={24}>
+          <Col span={12}>
+            <Card title="飞书配置" style={{ marginBottom: 20 }}>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['feishu', 'app_id']} label="应用 ID (App ID)">
+                    <Input />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name={['feishu', 'app_secret']} label="应用凭证 (App Secret)">
+                    <Input.Password />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['feishu', 'bot_open_id']} label="机器人 Open ID">
+                    <Input />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name={['feishu', 'group_chat_id']} label="群聊 ID">
+                    <Input />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
 
-        <Card title="TAPD 配置" style={{ marginBottom: 20 }}>
-          <Row gutter={24}>
-            <Col span={12}>
-              <Form.Item name={['tapd', 'workspace_id']} label="项目空间 ID (Workspace ID)">
-                <InputNumber style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name={['tapd', 'api_token']} label="API 凭证 (Token)">
-                <Input.Password />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
+            <Card title="TAPD 配置" style={{ marginBottom: 20 }}>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['tapd', 'workspace_id']} label="项目空间 ID (Workspace ID)">
+                    <InputNumber style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name={['tapd', 'api_token']} label="API 凭证 (Token)">
+                    <Input.Password />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
 
-        <Card title="AI 模型配置" style={{ marginBottom: 20 }}>
-          <Row gutter={24}>
-            <Col span={12}>
-              <Form.Item name={['ai', 'api_base']} label="API 地址 (Base URL)">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name={['ai', 'api_key']} label="API 密钥 (API Key)">
-                <Input.Password />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={24}>
-            <Col span={12}>
-              <Form.Item name={['ai', 'model']} label="模型名称">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name={['ai', 'temperature']} label="温度 (Temperature)">
-                <InputNumber step={0.1} min={0} max={2} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Card>
+            <Card title="AI 模型配置" style={{ marginBottom: 20 }}>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['ai', 'api_base']} label="API 地址 (Base URL)">
+                    <Input />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name={['ai', 'api_key']} label="API 密钥 (API Key)">
+                    <Input.Password />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['ai', 'model']} label="模型名称">
+                    <Input />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name={['ai', 'temperature']} label="温度 (Temperature)">
+                    <InputNumber step={0.1} min={0} max={2} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+          </Col>
 
-        <Form.Item>
-          <Button type="primary" htmlType="submit" loading={saving} size="large">
-            保存配置
-          </Button>
-        </Form.Item>
+          <Col span={12}>
+            <Card title="运行时配置 (Runtime)" style={{ marginBottom: 20 }}>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['runtime', 'data_dir']} label="数据存储目录">
+                    <Input />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name={['runtime', 'public_base_url']} label="公共访问 URL 前缀">
+                    <Input placeholder="例如: https://my-dashboard.com" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['runtime', 'public_missing_standups']} label="是否公开未交站会名单" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name={['runtime', 'public_overdue_owners']} label="是否公开超期负责人" valuePropName="checked">
+                    <Switch />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+
+            <Card title="定时任务设置 (Schedule Configuration)" style={{ marginBottom: 20 }}>
+              <div style={{ color: '#888', marginBottom: 16 }}>
+                注：时间设定用于系统记录和底层参考。开关可随时关闭任务拦截底层触发。
+              </div>
+              {JOBS.map(job => (
+                <Row gutter={24} key={job.id} style={{ alignItems: 'center', marginBottom: 8 }}>
+                  <Col span={8}>
+                    <strong>{job.name}</strong>
+                  </Col>
+                  <Col span={10}>
+                    <Form.Item name={['schedule', job.id]} style={{ margin: 0 }}>
+                      <Input placeholder="HH:MM" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={6}>
+                    <Form.Item name={['schedule', `${job.id}_enabled`]} valuePropName="checked" style={{ margin: 0 }}>
+                      <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              ))}
+            </Card>
+          </Col>
+        </Row>
       </Form>
     </div>
   );

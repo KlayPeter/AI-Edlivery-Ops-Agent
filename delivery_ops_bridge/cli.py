@@ -50,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_job(config_path: str | None, dry_run: bool, name: str, day_text: str | None):
     config = load_config(config_path)
+    
+    is_enabled = config.schedule.get(f"{name}_enabled", True)
+    if not is_enabled:
+        return {"ok": True, "message": f"任务 {name} 已在配置文件中被禁用，本次跳过执行。"}
+        
     store = JsonStore(config.data_path)
     feishu = FeishuAdapter(config.feishu, dry_run=dry_run)
     dashboard = DashboardService(store, config.data_path, config.project.name, config.feishu.group_name, config.runtime.public_base_url)

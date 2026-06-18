@@ -61,7 +61,7 @@ class AppConfig:
     ai: AIConfig
     runtime: RuntimeConfig
     members: List[Member] = field(default_factory=list)
-    schedule: Dict[str, str] = field(default_factory=dict)
+    schedule: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def root_path(self) -> Path:
