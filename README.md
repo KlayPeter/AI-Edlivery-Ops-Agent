@@ -312,19 +312,22 @@ python3 -m delivery_ops_bridge.cli --config config/config.json --dry-run server 
 启动真实服务：
 
 ```bash
-python3 -m delivery_ops_bridge.cli --config config/config.json server --host 127.0.0.1 --port 8090
+python3 -m delivery_ops_bridge.cli --config config/config.json server --host 0.0.0.0 --port 8090
 ```
 
-启动 Cloudflare tunnel：
+> [!TIP]
+> 推荐使用 `localtunnel` 进行穿透，它可以固定子域名且不易被拦截。注意后端需绑定 `--host 0.0.0.0` 确保外部访问。
+
+启动 localtunnel（推荐首选方案，固定飞书 Webhook 域名）：
+
+```bash
+npx localtunnel --port 8090 --subdomain peter-ops-bot
+```
+
+启动 Cloudflare tunnel（备选方案，部分网络环境可能会被拦截导致返回 HTML 错误）：
 
 ```bash
 cloudflared tunnel --url http://localhost:8090
-```
-
-启动 localtunnel 备用方案：
-
-```bash
-npx localtunnel --port 8090
 ```
 
 启动 localhost.run 备用方案：
