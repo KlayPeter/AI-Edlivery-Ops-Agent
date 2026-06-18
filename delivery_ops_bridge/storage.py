@@ -129,6 +129,9 @@ class JsonStore:
             return None
         return self._read_json(path, None)
 
+    def list_bot_message_contexts(self) -> List[Dict[str, Any]]:
+        return self._list_json("contexts")
+
     def update_chat_id(self, open_id: str, chat_id: str) -> None:
         data = self._read_json(self._chat_ids_path, {})
         data[open_id] = chat_id

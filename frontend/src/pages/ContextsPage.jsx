@@ -1,0 +1,127 @@
+import React, { useEffect, useState } from 'react';
+import { Table, Tag, Typography, Spin, message, Tooltip, Space } from 'antd';
+import { api } from '../api';
+
+const { Title, Text } = Typography;
+
+const getTypeColor = (type) => {
+  switch (type) {
+    case 'task_confirmation': return 'volcano';
+    case 'standup_prompt': return 'cyan';
+    case 'task_plan_request': return 'purple';
+    case 'task_group_notice': return 'green';
+    case 'task_acceptance_prompt': return 'magenta';
+    default: return 'blue';
+  }
+};
+
+const getTypeName = (type) => {
+  switch (type) {
+    case 'task_confirmation': return '待确认任务';
+    case 'standup_prompt': return '站会提醒';
+    case 'task_plan_request': return '待补充计划';
+    case 'task_group_notice': return '群聊通知';
+    case 'task_acceptance_prompt': return '待验收任务';
+    default: return type;
+  }
+};
+
+const ContextsPage = () => {
+  const [contexts, setContexts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.fetchContexts().then(data => {
+      setContexts(data);
+      setLoading(false);
+    }).catch(err => {
+      message.error('加载上下文失败：' + err.message);
+      setLoading(false);
+    });
+  }, []);
+
+  const columns = [
+    {
+      title: '时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 180,
+      render: (text) => <Text type="secondary">{new Date(text).toLocaleString()}</Text>
+    },
+    {
+      title: '上下文类型',
+      dataIndex: 'context_type',
+      key: 'context_type',
+      width: 150,
+      filters: [
+        { text: '待确认任务', value: 'task_confirmation' },
+        { text: '站会提醒', value: 'standup_prompt' },
+        { text: '待补充计划', value: 'task_plan_request' },
+        { text: '群聊通知', value: 'task_group_notice' },
+        { text: '待验收任务', value: 'task_acceptance_prompt' },
+      ],
+      onFilter: (value, record) => record.context_type === value,
+      render: (type) => (
+        <Tag color={getTypeColor(type)} style={{ fontWeight: 500 }}>
+          {getTypeName(type)}
+        </Tag>
+      )
+    },
+    {
+      title: '关联任务',
+      dataIndex: 'task_title',
+      key: 'task_title',
+      render: (text, record) => (
+        <Space direction="vertical" size={0}>
+          <Text strong>{text || '-'}</Text>
+          {record.task_id && <Text type="secondary" style={{ fontSize: '12px' }}>ID: {record.task_id}</Text>}
+        </Space>
+      )
+    },
+    {
+      title: '目标接收人 / 群',
+      key: 'target',
+      width: 200,
+      render: (_, record) => {
+        if (record.target_open_id) {
+          return <Tag color="blue">私聊: {record.target_open_id.split('_')[1]?.substring(0, 8)}...</Tag>;
+        }
+        if (record.chat_id) {
+          return <Tag color="orange">群聊: {record.chat_id.split('_')[1]?.substring(0, 8)}...</Tag>;
+        }
+        return '-';
+      }
+    },
+    {
+      title: '源消息 ID',
+      dataIndex: 'message_id',
+      key: 'message_id',
+      width: 180,
+      render: (text) => (
+        <Tooltip title={text}>
+          <Text code>{text.split('_')[1]?.substring(0, 8)}...</Text>
+        </Tooltip>
+      )
+    }
+  ];
+
+  return (
+    <div style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ marginBottom: 16 }}>
+        <Title level={3} style={{ margin: 0 }}>上下文记忆 (Contexts)</Title>
+        <Text type="secondary">这里展示了系统向用户发送的具有强交互属性的消息，当用户对这些消息“引用回复”时，中台能精确识别上下文语境。</Text>
+      </div>
+      
+      <Table 
+        columns={columns} 
+        dataSource={contexts} 
+        rowKey="message_id" 
+        loading={loading}
+        pagination={{ pageSize: 15 }}
+        style={{ flex: 1, overflow: 'auto' }}
+      />
+    </div>
+  );
+};
+
+export default ContextsPage;

@@ -64,8 +64,8 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             
         if self.path.startswith("/api/dashboards/"):
             filename = self.path.split("/")[-1]
-            filepath = Path(os.environ.get("DELIVERY_OPS_CONFIG", "config/config.json")).parent.parent / "data/dashboards" / filename
-            if filepath.exists():
+            filepath = self.bridge.config.data_path / "dashboards" / filename
+            if filepath.exists() and filepath.name.endswith(".html"):
                 with filepath.open("r", encoding="utf-8") as f:
                     html_content = f.read().encode("utf-8")
                     self.send_response(200)
@@ -92,6 +92,12 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             self._json_response(200, {"logs": list(reversed(logs))[:100]})
+            return
+
+        if self.path == "/api/contexts":
+            contexts = self.bridge.store.list_bot_message_contexts()
+            contexts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            self._json_response(200, {"contexts": contexts})
             return
 
         self._json_response(404, {"error": "not_found"})

@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import React from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Layout, Menu, ConfigProvider, theme } from 'antd';
-import { SettingOutlined, DashboardOutlined, CodeOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { SettingOutlined, DashboardOutlined, CodeOutlined, UnorderedListOutlined, DatabaseOutlined } from '@ant-design/icons';
 import ConfigPage from './pages/ConfigPage';
 import DashboardPage from './pages/DashboardPage';
 import LogsPage from './pages/LogsPage';
 import DebugPage from './pages/DebugPage';
+import ContextsPage from './pages/ContextsPage';
 
 const { Header, Content } = Layout;
 
@@ -28,6 +29,11 @@ function AppContent() {
       key: '/debug',
       icon: <CodeOutlined />,
       label: '流程调试',
+    },
+    {
+      key: '/contexts',
+      icon: <DatabaseOutlined />,
+      label: '上下文记忆',
     },
     {
       key: '/config',
@@ -57,6 +63,7 @@ function AppContent() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/debug" element={<DebugPage />} />
+            <Route path="/contexts" element={<ContextsPage />} />
             <Route path="/config" element={<ConfigPage />} />
           </Routes>
         </div>
