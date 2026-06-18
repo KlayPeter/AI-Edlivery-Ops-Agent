@@ -1,0 +1,9 @@
+# Delivery Ops Bridge scheduled jobs
+# Edit PROJECT_ROOT and DELIVERY_OPS_CONFIG before installing with crontab -e.
+
+0 9 * * 1-5   cd /opt/ai-delivery-ops && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh standup-push
+30 9 * * 1-5  cd /opt/ai-delivery-ops && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh standup-remind
+10 11 * * 1-5 cd /opt/ai-delivery-ops && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh standup-summary
+0 10 * * *    cd /opt/ai-delivery-ops && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh overdue-scan
+30 18 * * *   cd /opt/ai-delivery-ops && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh daily-summary
+40 18 * * *   cd /opt/ai-delivery-ops && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh dashboard
