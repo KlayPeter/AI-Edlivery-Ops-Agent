@@ -64,16 +64,16 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             
         if self.path.startswith("/api/dashboards/"):
             filename = self.path.split("/")[-1]
-            filepath = self.bridge.config.data_path / "dashboards" / filename
-            if filepath.exists() and filepath.name.endswith(".html"):
-                with open(filepath, "r", encoding="utf-8") as f:
-                    body = f.read().encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(body)
+            filepath = Path(os.environ.get("DELIVERY_OPS_CONFIG", "config/config.json")).parent.parent / "data/dashboards" / filename
+            if filepath.exists():
+                with filepath.open("r", encoding="utf-8") as f:
+                    html_content = f.read().encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(html_content)))
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(html_content)
                 return
             self._json_response(404, {"error": "not_found"})
             return
