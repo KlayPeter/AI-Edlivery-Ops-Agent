@@ -145,9 +145,15 @@ class JsonStore:
         return None
 
     def append_audit_log(self, event_type: str, payload: Dict[str, Any]) -> None:
+        from datetime import datetime
         path = self.data_dir / "logs" / "audit.jsonl"
         with path.open("a", encoding="utf-8") as fp:
-            fp.write(json.dumps({"event_type": event_type, "payload": payload}, ensure_ascii=False) + "\n")
+            log_entry = {
+                "timestamp": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+                "event_type": event_type,
+                "payload": payload
+            }
+            fp.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
     def _list_json(self, subdir: str) -> List[Dict[str, Any]]:
         root = self.data_dir / subdir

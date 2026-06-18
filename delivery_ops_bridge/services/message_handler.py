@@ -58,7 +58,12 @@ class MessageHandler:
         if message is None:
             return {"handled": False, "reason": "not_message_event"}
         self.store.save_source_message(message)
-        self.store.append_audit_log("source_message_received", {"message_id": message.id, "chat_type": message.chat_type})
+        self.store.append_audit_log("source_message_received", {
+            "message_id": message.id, 
+            "chat_type": message.chat_type,
+            "sender": message.sender_name,
+            "text": message.text[:200]
+        })
 
         if self._is_system_noise(message.text):
             return {"handled": False, "reason": "system_noise"}
@@ -85,6 +90,7 @@ class MessageHandler:
             else:
                 text = f"今日进度看板已生成，但飞书云盘发布失败：\n{self.feishu.explain_error(publish)}\n本地文件：{artifact.html_path}"
             self.feishu.send_group_text(text, message.chat_id)
+            self.store.append_audit_log("dashboard_generated", {"artifact_path": artifact.html_path, "public_url": artifact.public_url})
             return {"handled": True, "action": "dashboard", "artifact": artifact.html_path}
 
         status_result = self._maybe_handle_status_update(message, source="group", reply_context=reply_context)
@@ -111,6 +117,7 @@ class MessageHandler:
             standup = parse_standup(message.sender_open_id, message.sender_name, message.text, message.id)
             self.store.save_standup(standup)
             self.feishu.send_private_text(message.sender_open_id, "已收到今日站会，谢谢。")
+            self.store.append_audit_log("standup_saved", {"open_id": standup.open_id, "standup_id": standup.id})
             return {"handled": True, "action": "standup_saved", "standup_id": standup.id}
         status_result = self._maybe_handle_status_update(message, source="private", reply_context=reply_context)
         if status_result:
@@ -212,6 +219,7 @@ class MessageHandler:
                     metadata={"tapd_story_id": task.tapd_story_id or ""},
                 )
             )
+        self.store.append_audit_log("task_created", {"task_id": task.id, "title": task.title, "owner": owner.name, "tapd_id": task.tapd_story_id})
         return {"handled": True, "action": "task_created", "task_id": task.id, "tapd_story_id": task.tapd_story_id}
 
     def _maybe_handle_status_update(
@@ -332,6 +340,7 @@ class MessageHandler:
                 )
         else:
             self._reply(message, source, f"任务状态已更新：{task.title} -> {status}")
+        self.store.append_audit_log("task_status_updated", {"task_id": task.id, "status": status, "update_type": update_type})
         return {"handled": True, "action": update_type, "task_id": task.id, "status": status}
 
     def _save_progress(self, message: SourceMessage, source: str, task_data: Dict[str, Any], content: str) -> Dict[str, Any]:

@@ -130,6 +130,7 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                         cmd.append("--dry-run")
                     cmd.extend(["job", job_name])
                     subprocess.Popen(cmd)
+                    self.bridge.store.append_audit_log("job_triggered", {"job_name": job_name, "dry_run": dry_run})
                     self._json_response(200, {"ok": True, "message": f"任务 {job_name} 已在后台启动"})
                 except Exception as e:
                     self._json_response(500, {"error": str(e)})
