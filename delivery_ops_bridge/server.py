@@ -97,6 +97,15 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/api/contexts":
             contexts = self.bridge.store.list_bot_message_contexts()
             contexts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            
+            # 丰富上下文中的人员名字信息
+            for ctx in contexts:
+                target_id = ctx.get("target_open_id")
+                if target_id:
+                    member = self.bridge.config.member_by_open_id(target_id)
+                    if member:
+                        ctx["target_name"] = member.name
+                        
             self._json_response(200, {"contexts": contexts})
             return
 

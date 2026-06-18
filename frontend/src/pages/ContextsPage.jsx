@@ -71,18 +71,26 @@ const ContextsPage = () => {
       title: '关联任务',
       dataIndex: 'task_title',
       key: 'task_title',
-      render: (text, record) => (
-        <Space direction="vertical" size={0}>
-          <Text strong>{text || '-'}</Text>
-          {record.task_id && <Text type="secondary" style={{ fontSize: '12px' }}>ID: {record.task_id}</Text>}
-        </Space>
-      )
+      render: (text, record) => {
+        if (!text && !record.task_id) {
+          return <Text type="secondary" italic>无特定任务 (如: 每日站会提醒)</Text>;
+        }
+        return (
+          <Space direction="vertical" size={0}>
+            <Text strong>{text || '-'}</Text>
+            {record.task_id && <Text type="secondary" style={{ fontSize: '12px' }}>ID: {record.task_id}</Text>}
+          </Space>
+        );
+      }
     },
     {
       title: '目标接收人 / 群',
       key: 'target',
       width: 200,
       render: (_, record) => {
+        if (record.target_name) {
+          return <Tag color="blue">私聊: {record.target_name}</Tag>;
+        }
         if (record.target_open_id) {
           return <Tag color="blue">私聊: {record.target_open_id.split('_')[1]?.substring(0, 8)}...</Tag>;
         }
