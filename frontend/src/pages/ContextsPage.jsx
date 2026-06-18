@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Typography, Spin, message, Tooltip, Space } from 'antd';
+import { Table, Tag, Typography, message, Tooltip, Space, Tabs } from 'antd';
 import { api } from '../api';
 
 const { Title, Text } = Typography;
@@ -29,6 +29,7 @@ const getTypeName = (type) => {
 const ContextsPage = () => {
   const [contexts, setContexts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('all');
 
   useEffect(() => {
     api.fetchContexts().then(data => {
@@ -113,6 +114,21 @@ const ContextsPage = () => {
     }
   ];
 
+  const privateContexts = contexts.filter(c => !!c.target_open_id);
+  const groupContexts = contexts.filter(c => !!c.chat_id);
+  
+  const getDataSource = () => {
+    if (activeTab === 'private') return privateContexts;
+    if (activeTab === 'group') return groupContexts;
+    return contexts;
+  };
+
+  const items = [
+    { key: 'all', label: `全部 (${contexts.length})` },
+    { key: 'private', label: `私聊上下文 (${privateContexts.length})` },
+    { key: 'group', label: `群聊上下文 (${groupContexts.length})` }
+  ];
+
   return (
     <div style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ marginBottom: 16 }}>
@@ -120,9 +136,11 @@ const ContextsPage = () => {
         <Text type="secondary">这里展示了系统向用户发送的具有强交互属性的消息，当用户对这些消息“引用回复”时，中台能精确识别上下文语境。</Text>
       </div>
       
+      <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
+
       <Table 
         columns={columns} 
-        dataSource={contexts} 
+        dataSource={getDataSource()} 
         rowKey="message_id" 
         loading={loading}
         pagination={{ pageSize: 15 }}
