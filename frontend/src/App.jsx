@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, ConfigProvider, theme } from 'antd';
-import { SettingOutlined, DashboardOutlined } from '@ant-design/icons';
+import { SettingOutlined, DashboardOutlined, CodeOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import ConfigPage from './pages/ConfigPage';
 import DashboardPage from './pages/DashboardPage';
+import LogsPage from './pages/LogsPage';
+import DebugPage from './pages/DebugPage';
 
 const { Header, Content } = Layout;
 
@@ -15,7 +17,17 @@ function AppContent() {
     {
       key: '/',
       icon: <DashboardOutlined />,
-      label: '看板与日志',
+      label: '数据看板',
+    },
+    {
+      key: '/logs',
+      icon: <UnorderedListOutlined />,
+      label: '系统日志',
+    },
+    {
+      key: '/debug',
+      icon: <CodeOutlined />,
+      label: '流程调试',
     },
     {
       key: '/config',
@@ -43,6 +55,8 @@ function AppContent() {
         <div style={{ background: '#fff', flex: 1, borderRadius: '8px', overflow: 'hidden' }}>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/logs" element={<LogsPage />} />
+            <Route path="/debug" element={<DebugPage />} />
             <Route path="/config" element={<ConfigPage />} />
           </Routes>
         </div>

@@ -9,4 +9,5 @@ export const api = {
   fetchDashboards: () => axios.get(`${API_BASE}/dashboards`).then(res => res.data.dashboards),
   getDashboardUrl: (filename) => `${API_BASE}/dashboards/${filename}`,
   fetchLogs: () => axios.get(`${API_BASE}/logs`).then(res => res.data.logs),
+  triggerJob: (jobName, dryRun = false) => axios.post(`${API_BASE}/jobs/${jobName}`, { dryRun }).then(res => res.data),
 };

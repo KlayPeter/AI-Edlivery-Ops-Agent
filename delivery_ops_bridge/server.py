@@ -108,6 +108,29 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                 self._json_response(500, {"error": str(e)})
             return
 
+        if self.path.startswith("/api/jobs/"):
+            job_name = self.path.split("/")[-1]
+            valid_jobs = ["standup-push", "standup-remind", "standup-summary", "overdue-scan", "daily-summary", "dashboard"]
+            if job_name in valid_jobs:
+                try:
+                    payload = self._read_json()
+                except Exception:
+                    payload = {}
+                dry_run = payload.get("dryRun", False)
+                try:
+                    import subprocess
+                    cmd = ["python3", "-m", "delivery_ops_bridge.cli", "--config", "config/config.json"]
+                    if dry_run:
+                        cmd.append("--dry-run")
+                    cmd.extend(["job", job_name])
+                    subprocess.Popen(cmd)
+                    self._json_response(200, {"ok": True, "message": f"任务 {job_name} 已在后台启动"})
+                except Exception as e:
+                    self._json_response(500, {"error": str(e)})
+            else:
+                self._json_response(400, {"error": "无效的任务名称"})
+            return
+
         try:
             payload = self._read_json()
         except json.JSONDecodeError:
