@@ -32,13 +32,82 @@ def build_handler(config_path: str | None = None, dry_run: bool = False) -> Mess
 class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
     bridge: MessageHandler
 
+    def do_OPTIONS(self) -> None:
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.end_headers()
+
     def do_GET(self) -> None:
         if self.path == "/healthz":
             self._json_response(200, {"ok": True})
             return
+            
+        if self.path == "/api/config":
+            config_path = os.environ.get("DELIVERY_OPS_CONFIG", "config/config.json")
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    self._json_response(200, json.load(f))
+            except Exception as e:
+                self._json_response(500, {"error": str(e)})
+            return
+
+        if self.path == "/api/dashboards":
+            dashboards_dir = self.bridge.config.data_path / "dashboards"
+            if not dashboards_dir.exists():
+                self._json_response(200, {"dashboards": []})
+                return
+            files = [f.name for f in dashboards_dir.iterdir() if f.name.endswith(".html")]
+            self._json_response(200, {"dashboards": sorted(files, reverse=True)})
+            return
+            
+        if self.path.startswith("/api/dashboards/"):
+            filename = self.path.split("/")[-1]
+            filepath = self.bridge.config.data_path / "dashboards" / filename
+            if filepath.exists() and filepath.name.endswith(".html"):
+                with open(filepath, "r", encoding="utf-8") as f:
+                    body = f.read().encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            self._json_response(404, {"error": "not_found"})
+            return
+
+        if self.path == "/api/logs":
+            logs_path = self.bridge.config.data_path / "logs" / "audit.jsonl"
+            if not logs_path.exists():
+                self._json_response(200, {"logs": []})
+                return
+            logs = []
+            try:
+                with open(logs_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip():
+                            logs.append(json.loads(line))
+            except Exception:
+                pass
+            self._json_response(200, {"logs": list(reversed(logs))[:100]})
+            return
+
         self._json_response(404, {"error": "not_found"})
 
     def do_POST(self) -> None:
+        if self.path == "/api/config":
+            try:
+                payload = self._read_json()
+                config_path = os.environ.get("DELIVERY_OPS_CONFIG", "config/config.json")
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=2)
+                self._json_response(200, {"ok": True})
+            except Exception as e:
+                self._json_response(500, {"error": str(e)})
+            return
+
         try:
             payload = self._read_json()
         except json.JSONDecodeError:
@@ -71,6 +140,7 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
