@@ -1,0 +1,52 @@
+{
+  "project": {
+    "name": "ZenithStrat",
+    "root": "."
+  },
+  "feishu": {
+    "app_id": "cli_aaa1c7db9cb81bde",
+    "app_secret": "",
+    "bot_open_id": "ou_1d83ab6e737842016438b59cdb122bc0",
+    "bot_name": "AI交付助理",
+    "group_chat_id": "oc_c6f9a8a03198c9f24e894517d7a622e1",
+    "group_name": "研发群",
+    "lark_cli_path": "lark-cli",
+    "verify_token": ""
+  },
+  "tapd": {
+    "workspace_id": 52052188,
+    "api_token": "",
+    "api_base": "https://api.tapd.cn",
+    "workitem_type_id": "1152052188001000017"
+  },
+  "ai": {
+    "provider": "openai",
+    "api_base": "https://api.openai.com/v1",
+    "api_key": "",
+    "model": "gpt-4o",
+    "max_tokens": 4096,
+    "temperature": 0.2
+  },
+  "runtime": {
+    "data_dir": "data",
+    "public_base_url": "",
+    "public_missing_standups": false,
+    "public_overdue_owners": false
+  },
+  "members": [
+    {
+      "open_id": "ou_3f85f7ad58df6c643468bbe64e738c91",
+      "name": "张三",
+      "role": "backend",
+      "is_active": true
+    }
+  ],
+  "schedule": {
+    "standup_push": "09:00",
+    "standup_remind": "09:30",
+    "standup_summary": "11:10",
+    "overdue_scan": "10:00",
+    "daily_summary": "18:30",
+    "dashboard": "18:40"
+  }
+}
