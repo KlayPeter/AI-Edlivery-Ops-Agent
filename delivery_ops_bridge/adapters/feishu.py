@@ -259,6 +259,8 @@ class FeishuAdapter:
         raw: Dict[str, Any] = {}
         if proc.stdout.strip():
             raw = self._parse_json_output(proc.stdout)
+        if not raw and proc.stderr.strip():
+            raw = self._parse_json_output(proc.stderr)
         chat_id, message_id, file_token, url = self._extract_result_fields(raw)
         if proc.returncode != 0:
             return SendResult(ok=False, raw=raw, chat_id=chat_id, message_id=message_id, file_token=file_token, url=url, error=proc.stderr.strip() or proc.stdout.strip())
