@@ -325,6 +325,32 @@ def test_private_standup_is_saved(handler):
     assert standups[0]["today_plan"] == ["联调前端"]
 
 
+def test_private_standup_links_task_progress_and_done_status(handler):
+    created = handler.handle_event(
+        feishu_event(
+            "@AI交付助理 @张三 创建任务：完成登录接口错误码统一",
+            mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+            message_id="om_standup_task_create",
+        )
+    )
+
+    result = handler.handle_event(
+        feishu_event(
+            "【昨日完成】\n1. 登录接口错误码统一已完成\n【今日计划】\n1. 补充接口文档\n【阻塞/需要帮助】\n无\n【风险/可能延期】\n无\n【需要决策】\n无",
+            message_id="om_standup_link",
+            chat_type="private",
+            sender="ou_zhangsan",
+            chat_id="oc_private_zhangsan",
+        )
+    )
+
+    assert result["linked_task_ids"] == [created["task_id"]]
+    task = handler.store.get_task(created["task_id"])
+    assert task["status"] == "owner_marked_done"
+    updates = handler.store.list_task_updates(created["task_id"])
+    assert any(item["source"] == "standup" and item["update_type"] == "progress" for item in updates)
+
+
 def test_private_reply_to_standup_prompt_uses_context(handler):
     handler.store.save_bot_message_context(
         BotMessageContext(
@@ -365,6 +391,11 @@ def test_dashboard_generation(handler):
 
     assert result["action"] == "dashboard"
     assert result["artifact"].endswith(".html")
+    html = handler.config.data_path.joinpath("dashboards", result["artifact"].split("/")[-1]).read_text(encoding="utf-8")
+    assert "状态统计" in html
+    assert "阻塞事项" in html
+    assert "风险提示" in html
+    assert "今日站会摘要" in html
 
 
 def test_private_reply_accept_uses_task_context(handler):
@@ -398,6 +429,45 @@ def test_private_reply_accept_uses_task_context(handler):
 
     assert result["action"] == "accepted_by_owner"
     assert handler.store.list_tasks()[0]["status"] == "confirmed"
+
+
+def test_private_reply_to_plan_request_saves_structured_task_plan(handler):
+    create_event = feishu_event(
+        "@AI交付助理 @张三 创建任务：完成登录接口错误码统一",
+        mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+    )
+    created = handler.handle_event(create_event)
+    handler.store.save_bot_message_context(
+        BotMessageContext(
+            message_id="om_bot_plan",
+            context_type="task_plan_request",
+            created_at=utc_now_iso(),
+            chat_id="oc_private_zhangsan",
+            target_open_id="ou_zhangsan",
+            task_id=created["task_id"],
+            task_title="完成登录接口错误码统一",
+            metadata={"tapd_story_id": created["tapd_story_id"]},
+        )
+    )
+
+    result = handler.handle_event(
+        feishu_event(
+            "预计完成时间：明天\n拆分步骤：\n1. 统一错误码\n2. 更新接口文档\n依赖对象：前端联调环境\n风险点：测试环境不稳定\n是否需要协助：否",
+            message_id="om_plan_reply",
+            chat_type="private",
+            sender="ou_zhangsan",
+            chat_id="oc_private_zhangsan",
+            parent_id="om_bot_plan",
+        )
+    )
+
+    task = handler.store.get_task(created["task_id"])
+    assert result["action"] == "task_plan_saved"
+    assert task["task_plan"]["estimated_time"] == "明天"
+    assert task["task_plan"]["steps"] == ["统一错误码", "更新接口文档"]
+    assert task["task_plan"]["dependencies"] == ["前端联调环境"]
+    assert task["task_plan"]["risks"] == ["测试环境不稳定"]
+    assert task["task_plan"]["need_help"] is False
 
 
 def test_private_plain_accept_without_context_requires_identifier(handler):
@@ -460,6 +530,42 @@ def test_group_reply_acceptance_uses_task_context(handler):
     result = handler.handle_event(accept_event)
 
     assert result["action"] == "accepted"
+
+
+def test_group_acceptance_requires_task_creator(handler):
+    create_event = feishu_event(
+        "@AI交付助理 @张三 创建任务：完成登录接口错误码统一",
+        mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+        message_id="om_group_create_creator_only",
+    )
+    created = handler.handle_event(create_event)
+    task = handler.store.get_task(created["task_id"])
+    task["status"] = "owner_marked_done"
+    handler.store.save_task(Task(**task))
+    handler.store.save_bot_message_context(
+        BotMessageContext(
+            message_id="om_group_acceptance_creator_only",
+            context_type="task_acceptance_prompt",
+            created_at=utc_now_iso(),
+            chat_id="oc_group",
+            task_id=created["task_id"],
+            task_title="完成登录接口错误码统一",
+        )
+    )
+
+    result = handler.handle_event(
+        feishu_event(
+            "验收通过",
+            message_id="om_group_accept_by_other",
+            chat_type="group",
+            sender="ou_lisi",
+            chat_id="oc_group",
+            parent_id="om_group_acceptance_creator_only",
+        )
+    )
+
+    assert result["action"] == "unauthorized"
+    assert handler.store.get_task(created["task_id"])["status"] == "owner_marked_done"
 
 
 def test_daily_summary_classifies_group_messages_with_traceability(handler):

@@ -10,6 +10,20 @@ from typing import Any, Dict, List
 from ..models import DashboardArtifact, utc_now_iso
 from ..storage import JsonStore
 
+STATUS_LABELS = {
+    "pending_primary_owner": "待指定主负责人",
+    "pending_confirmation": "待负责人确认",
+    "confirmed": "已确认",
+    "in_progress": "进行中",
+    "blocked": "阻塞",
+    "owner_marked_done": "待验收",
+    "accepted": "已验收",
+    "cancelled": "已取消",
+    "overdue": "已超期",
+}
+STATUS_SORT = {"blocked": 0, "overdue": 1, "pending_primary_owner": 2, "pending_confirmation": 3, "owner_marked_done": 4}
+PRIORITY_SORT = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+
 
 class DashboardService:
     def __init__(self, store: JsonStore, data_dir: Path, project_name: str, group_name: str, public_base_url: str = ""):
@@ -22,7 +36,7 @@ class DashboardService:
     def generate(self, day: date | None = None, highlights: List[str] | None = None) -> DashboardArtifact:
         day = day or date.today()
         date_text = day.isoformat()
-        tasks = self.store.list_tasks()
+        tasks = self._sort_tasks(self.store.list_tasks())
         standups = self.store.list_standups(date_text)
         updates = self.store.list_task_updates()
         stats = self._build_stats(tasks, standups, date_text)
@@ -36,6 +50,10 @@ class DashboardService:
             "tasks": tasks,
             "standups": standups,
             "updates": updates,
+            "status_distribution": self._status_distribution(tasks),
+            "blockers": self._build_blockers(tasks, standups),
+            "risks": self._build_risks(tasks, standups),
+            "standup_summary": self._build_standup_summary(standups),
         }
         stats_path = self.data_dir / "dashboards" / f"stats-{date_text}.json"
         stats_path.write_text(json.dumps(dashboard_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -90,12 +108,23 @@ class DashboardService:
         tasks = data["tasks"]
         standups = data["standups"]
         highlights = data["highlights"]
+        blockers = data["blockers"]
+        risks = data["risks"]
+        standup_summary = data["standup_summary"]
         task_rows = "\n".join(self._task_row(task) for task in tasks) or "<tr><td colspan='7'>暂无任务</td></tr>"
         highlight_items = "\n".join(f"<li>{html.escape(item)}</li>" for item in highlights)
+        status_rows = "\n".join(
+            f"<tr><td>{html.escape(item['label'])}</td><td>{item['count']}</td></tr>"
+            for item in data["status_distribution"]
+        ) or "<tr><td colspan='2'>暂无任务</td></tr>"
+        blocker_rows = "\n".join(self._issue_row(item) for item in blockers) or "<tr><td colspan='4'>暂无阻塞事项</td></tr>"
+        risk_rows = "\n".join(self._issue_row(item) for item in risks) or "<tr><td colspan='4'>暂无风险提示</td></tr>"
         standup_items = "\n".join(
             f"<li><strong>{html.escape(item.get('user_name', ''))}</strong>：{html.escape('；'.join(item.get('today_plan', [])) or '未填写今日计划')}</li>"
             for item in standups
         ) or "<li>暂无站会提交</li>"
+        standup_blockers = "\n".join(f"<li>{html.escape(item)}</li>" for item in standup_summary["blockers"]) or "<li>暂无站会阻塞</li>"
+        standup_decisions = "\n".join(f"<li>{html.escape(item)}</li>" for item in standup_summary["decisions_needed"]) or "<li>暂无待决策事项</li>"
         return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -113,6 +142,7 @@ class DashboardService:
     .metric strong {{ display: block; margin-top: 8px; font-size: 28px; }}
     section {{ margin: 30px 0; }}
     h2 {{ font-size: 18px; margin: 0 0 14px; }}
+    .two-col {{ display: grid; grid-template-columns: minmax(220px, 0.7fr) minmax(280px, 1.3fr); gap: 18px; align-items: start; }}
     table {{ width: 100%; border-collapse: collapse; background: #151d27; border: 1px solid #2c3a4c; }}
     th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #253244; font-size: 14px; vertical-align: top; }}
     th {{ color: #9fb0c3; background: #1b2633; }}
@@ -140,6 +170,22 @@ class DashboardService:
       <h2>今日重点</h2>
       <ul>{highlight_items}</ul>
     </section>
+    <section class="two-col">
+      <div>
+        <h2>状态统计</h2>
+        <table>
+          <thead><tr><th>状态</th><th>数量</th></tr></thead>
+          <tbody>{status_rows}</tbody>
+        </table>
+      </div>
+      <div>
+        <h2>阻塞事项</h2>
+        <table>
+          <thead><tr><th>描述</th><th>相关人</th><th>影响</th><th>建议动作</th></tr></thead>
+          <tbody>{blocker_rows}</tbody>
+        </table>
+      </div>
+    </section>
     <section>
       <h2>任务列表</h2>
       <table>
@@ -148,8 +194,24 @@ class DashboardService:
       </table>
     </section>
     <section>
+      <h2>风险提示</h2>
+      <table>
+        <thead><tr><th>描述</th><th>相关人</th><th>影响</th><th>建议动作</th></tr></thead>
+        <tbody>{risk_rows}</tbody>
+      </table>
+    </section>
+    <section>
       <h2>今日站会摘要</h2>
+      <div class="grid">
+        <div class="metric"><span>已提交人数</span><strong>{standup_summary['submitted']}</strong></div>
+        <div class="metric"><span>站会阻塞</span><strong>{len(standup_summary['blockers'])}</strong></div>
+        <div class="metric"><span>待决策事项</span><strong>{len(standup_summary['decisions_needed'])}</strong></div>
+      </div>
       <ul>{standup_items}</ul>
+      <h2>团队阻塞</h2>
+      <ul>{standup_blockers}</ul>
+      <h2>需要决策</h2>
+      <ul>{standup_decisions}</ul>
     </section>
   </main>
 </body>
@@ -170,3 +232,84 @@ class DashboardService:
             f"<td>{link_html}</td>"
             "</tr>"
         )
+
+    def _issue_row(self, item: Dict[str, Any]) -> str:
+        return (
+            "<tr>"
+            f"<td>{html.escape(item.get('title', ''))}</td>"
+            f"<td>{html.escape(item.get('owner', ''))}</td>"
+            f"<td>{html.escape(item.get('impact', ''))}</td>"
+            f"<td>{html.escape(item.get('action', ''))}</td>"
+            "</tr>"
+        )
+
+    def _sort_tasks(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        def key(task: Dict[str, Any]):
+            status_rank = STATUS_SORT.get(task.get("status", ""), 9)
+            priority_rank = PRIORITY_SORT.get(task.get("priority", "P2"), 5)
+            due = task.get("due_date") or "9999-12-31"
+            updated = task.get("updated_at", "")
+            return (status_rank, priority_rank, due, updated)
+
+        return sorted(tasks, key=key)
+
+    def _status_distribution(self, tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        counts = Counter(task.get("status", "unknown") for task in tasks)
+        return [
+            {"status": status, "label": STATUS_LABELS.get(status, status), "count": count}
+            for status, count in sorted(counts.items(), key=lambda item: STATUS_SORT.get(item[0], 9))
+        ]
+
+    def _build_blockers(self, tasks: List[Dict[str, Any]], standups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        values = [
+            {
+                "title": task.get("title", ""),
+                "owner": task.get("primary_owner_name", ""),
+                "impact": "任务处于阻塞状态",
+                "action": "确认协助人和下一步恢复动作",
+            }
+            for task in tasks
+            if task.get("status") == "blocked"
+        ]
+        for item in standups:
+            for blocker in item.get("blockers", []):
+                values.append(
+                    {
+                        "title": blocker,
+                        "owner": item.get("user_name", ""),
+                        "impact": "站会暴露协助需求",
+                        "action": "当天确认协助对象和处理时限",
+                    }
+                )
+        return values
+
+    def _build_risks(self, tasks: List[Dict[str, Any]], standups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        values = [
+            {
+                "title": task.get("title", ""),
+                "owner": task.get("primary_owner_name", ""),
+                "impact": f"任务状态：{STATUS_LABELS.get(task.get('status', ''), task.get('status', ''))}",
+                "action": "确认是否需要调整计划或资源",
+            }
+            for task in tasks
+            if task.get("status") in {"blocked", "overdue"}
+        ]
+        for item in standups:
+            for risk in item.get("risks", []):
+                values.append(
+                    {
+                        "title": risk,
+                        "owner": item.get("user_name", ""),
+                        "impact": "站会提出延期或交付风险",
+                        "action": "确认风险等级和缓解动作",
+                    }
+                )
+        return values
+
+    def _build_standup_summary(self, standups: List[Dict[str, Any]]) -> Dict[str, Any]:
+        return {
+            "submitted": len(standups),
+            "today_plan": [plan for item in standups for plan in item.get("today_plan", [])],
+            "blockers": [blocker for item in standups for blocker in item.get("blockers", [])],
+            "decisions_needed": [decision for item in standups for decision in item.get("decisions_needed", [])],
+        }

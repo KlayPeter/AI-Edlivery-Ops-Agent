@@ -74,6 +74,7 @@ class Task:
     dependencies: List[str] = field(default_factory=list)
     related_links: List[str] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
+    task_plan: Dict[str, Any] = field(default_factory=dict)
     tapd_story_id: Optional[str] = None
     tapd_url: Optional[str] = None
     parent_id: Optional[str] = None

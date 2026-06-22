@@ -12,6 +12,7 @@ from ..models import (
     BotMessageContext,
     Mention,
     SourceMessage,
+    Standup,
     Task,
     TaskUpdate,
     TASK_STATUS_ACCEPTED,
@@ -136,9 +137,13 @@ class MessageHandler:
         if self._should_treat_as_standup(message, reply_context):
             standup = parse_standup(message.sender_open_id, message.sender_name, message.text, message.id)
             self.store.save_standup(standup)
+            linked = self._link_standup_to_tasks(standup, message)
             self.feishu.send_private_text(message.sender_open_id, "已收到今日站会，谢谢。")
-            self.store.append_audit_log("standup_saved", {"open_id": standup.open_id, "standup_id": standup.id})
-            return {"handled": True, "action": "standup_saved", "standup_id": standup.id}
+            self.store.append_audit_log(
+                "standup_saved",
+                {"open_id": standup.open_id, "standup_id": standup.id, "linked_task_ids": linked},
+            )
+            return {"handled": True, "action": "standup_saved", "standup_id": standup.id, "linked_task_ids": linked}
         status_result = self._maybe_handle_status_update(message, source="private", reply_context=reply_context)
         if status_result:
             return status_result
@@ -262,6 +267,9 @@ class MessageHandler:
             return self._apply_action(message, source, task_data, action, text)
 
         contextual_task = self._contextual_task(message, reply_context, normalized_text=text)
+        if contextual_task and reply_context and reply_context.get("context_type") == "task_plan_request":
+            return self._save_task_plan(message, source, contextual_task, text)
+
         due_date = self._parse_due_date_update(text, allow_colon=bool(contextual_task))
         if due_date and contextual_task:
             return self._update_task_due_date(message, source, contextual_task, due_date, text)
@@ -296,13 +304,16 @@ class MessageHandler:
                 return self._set_task_status(message, source, contextual_task, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", text, None)
             if re.match(r"^\s*(阻塞|阻塞了)(?:[:：].+)?$", text):
                 return self._set_task_status(message, source, contextual_task, TASK_STATUS_BLOCKED, "blocked", text, None)
-            if text.startswith("进度") or reply_context and reply_context.get("context_type") in {"task_plan_request", "task_confirmation"}:
+            if text.startswith("进度") or reply_context and reply_context.get("context_type") == "task_confirmation":
                 return self._save_progress(message, source, contextual_task, text)
         return None
 
     def _apply_action(self, message: SourceMessage, source: str, task_data: Dict[str, Any], action: str, text: str) -> Dict[str, Any]:
         if action in {"接受", "拒绝"} and message.sender_open_id != task_data.get("primary_owner_open_id"):
             self._reply(message, source, "只有任务负责人可以确认或拒绝该任务。")
+            return {"handled": True, "action": "unauthorized"}
+        if action in {"验收通过", "打回"} and message.sender_open_id != task_data.get("creator_open_id"):
+            self._reply(message, source, "只有任务创建人可以验收或打回该任务。")
             return {"handled": True, "action": "unauthorized"}
         if action == "接受":
             return self._set_task_status(message, source, task_data, TASK_STATUS_CONFIRMED, "accepted_by_owner", text, TAPD_STATUS_IN_PROGRESS)
@@ -536,6 +547,112 @@ class MessageHandler:
         if source == "private" and task.source_message_id:
             self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 更新了任务进度：\n{content}")
         return {"handled": True, "action": "progress_saved", "task_id": task.id}
+
+    def _save_task_plan(self, message: SourceMessage, source: str, task_data: Dict[str, Any], content: str) -> Dict[str, Any]:
+        task_data["task_plan"] = self._parse_task_plan(content)
+        task_data["updated_at"] = utc_now_iso()
+        task = Task(**task_data)
+        self.store.save_task(task)
+        self._save_update(task, message.sender_open_id, message.sender_name, "task_plan", content, source, message.id)
+        self._reply(message, source, f"已保存任务计划：{task.title}")
+        if source == "private" and task.source_message_id:
+            self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 已补充任务计划：{task.title}")
+        self.store.append_audit_log("task_plan_saved", {"task_id": task.id, "source_message_id": message.id})
+        return {"handled": True, "action": "task_plan_saved", "task_id": task.id}
+
+    def _parse_task_plan(self, text: str) -> Dict[str, Any]:
+        return {
+            "raw_text": text,
+            "estimated_time": self._extract_plan_field(text, ["预计完成时间", "预计时间", "完成时间", "预计完成"]),
+            "steps": self._extract_plan_items(text, ["拆分步骤", "步骤", "计划"]),
+            "dependencies": self._extract_plan_items(text, ["依赖对象", "依赖"]),
+            "risks": self._extract_plan_items(text, ["风险点", "风险"]),
+            "need_help": self._parse_need_help(text),
+        }
+
+    def _link_standup_to_tasks(self, standup: Standup, message: SourceMessage) -> List[str]:
+        linked: List[str] = []
+        seen: set[str] = set()
+        for item in standup.yesterday_done + standup.today_plan:
+            task_data = self._match_standup_task(item, standup.open_id)
+            if not task_data:
+                continue
+            task = Task(**task_data)
+            self._save_update(task, standup.open_id, standup.user_name, "progress", f"站会进度：{item}", "standup", message.id)
+            if self._looks_done(item):
+                self._set_task_status(message, "private", task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", f"站会标记完成：{item}", None)
+            if task.id not in seen:
+                linked.append(task.id)
+                seen.add(task.id)
+        for item in standup.blockers:
+            task_data = self._match_standup_task(item, standup.open_id)
+            if not task_data:
+                continue
+            task = Task(**task_data)
+            self._set_task_status(message, "private", task_data, TASK_STATUS_BLOCKED, "blocked", f"站会阻塞：{item}", None)
+            if task.id not in seen:
+                linked.append(task.id)
+                seen.add(task.id)
+        return linked
+
+    def _match_standup_task(self, item: str, open_id: str) -> Optional[Dict[str, Any]]:
+        best_task: Optional[Dict[str, Any]] = None
+        best_score = 0.0
+        for task in self.store.list_tasks():
+            if task.get("status") in {TASK_STATUS_ACCEPTED, TASK_STATUS_CANCELLED}:
+                continue
+            if open_id != task.get("primary_owner_open_id") and open_id not in task.get("assignee_open_ids", []):
+                continue
+            score = self._title_overlap_score(item, task.get("title", ""))
+            if score > best_score:
+                best_task = task
+                best_score = score
+        return best_task if best_score >= 0.45 else None
+
+    def _title_overlap_score(self, text: str, title: str) -> float:
+        normalized_text = self._normalize_match_text(text)
+        normalized_title = self._normalize_match_text(title)
+        if not normalized_text or not normalized_title:
+            return 0.0
+        if normalized_title in normalized_text or normalized_text in normalized_title:
+            return 1.0
+        title_chars = set(normalized_title)
+        common = title_chars & set(normalized_text)
+        if len(common) < 4:
+            return 0.0
+        return len(common) / len(title_chars)
+
+    def _normalize_match_text(self, value: str) -> str:
+        text = re.sub(r"[\s，,。；;：:、/\\-]+", "", value)
+        for token in ["任务", "父", "子", "昨天", "今日", "今天", "计划", "继续", "准备", "已经", "已完成", "完成了", "完成"]:
+            text = text.replace(token, "")
+        return text
+
+    def _looks_done(self, text: str) -> bool:
+        return any(keyword in text for keyword in ["已完成", "完成了", "已经完成"])
+
+    def _extract_plan_field(self, text: str, labels: List[str]) -> str:
+        label_pattern = "|".join(re.escape(label) for label in labels)
+        match = re.search(rf"(?:{label_pattern})\s*[:：]\s*([^\n；;]+)", text)
+        return match.group(1).strip() if match else ""
+
+    def _extract_plan_items(self, text: str, labels: List[str]) -> List[str]:
+        label_pattern = "|".join(re.escape(label) for label in labels)
+        all_headers = "预计完成时间|预计时间|完成时间|预计完成|拆分步骤|步骤|计划|依赖对象|依赖|风险点|风险|是否需要协助|需要协助"
+        match = re.search(rf"(?:{label_pattern})\s*[:：]\s*(.+?)(?=(?:{all_headers})\s*[:：]|$)", text, re.S)
+        if not match:
+            return []
+        raw = match.group(1).strip()
+        if raw in {"无", "暂无", "没有"}:
+            return []
+        return [item.strip(" -，,。；;\n") for item in re.split(r"\n+|\d+[.、)]|[；;]", raw) if item.strip(" -，,。；;\n")]
+
+    def _parse_need_help(self, text: str) -> bool:
+        match = re.search(r"(?:是否需要协助|需要协助)\s*[:：]\s*([^\n；;]+)", text)
+        if not match:
+            return "需要协助" in text and "不需要协助" not in text
+        value = match.group(1).strip()
+        return value.startswith("是") or value.startswith("需要") or "需要" in value
 
     def _apply_ai_status_action(
         self,
