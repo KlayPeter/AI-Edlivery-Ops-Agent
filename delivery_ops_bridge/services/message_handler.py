@@ -29,14 +29,15 @@ from ..storage import JsonStore
 from .dashboard import DashboardService
 from .message_intent import IntentFields, MessageIntent, MessageIntentParser
 from .standup import looks_like_standup, parse_standup
-from .task_parser import ParsedTaskCommand, parse_due_date_text, parse_task_command
+from .task_parser import ParsedTaskCommand, has_task_intent, parse_due_date_text, parse_task_command
 
 
 TAPD_STATUS_IN_PROGRESS = "status_14"
+TAPD_STATUS_TESTING = "status_4"
 TAPD_STATUS_DONE = "status_5"
 TAPD_STATUS_CANCELLED = "status_20"
 WORKING_REACTION_MIN_SECONDS = 1.2
-AI_CONFIDENCE_THRESHOLD = 0.8
+AI_CONFIDENCE_THRESHOLD = 0.85
 PRIORITY_TO_TAPD_LABEL = {"P0": "High", "P1": "High", "P2": "Middle", "P3": "Low"}
 
 
@@ -66,7 +67,12 @@ class MessageHandler:
         if message is None:
             return {"handled": False, "reason": "not_message_event"}
 
-        reaction_id, reaction_started_at = self._add_working_reaction(message)
+        reply_context = self._resolve_reply_context(message)
+        is_explicit = message.chat_type == "p2p" or reply_context is not None or any(m.open_id == self.config.feishu.bot_open_id for m in message.mentions)
+
+        reaction_id, reaction_started_at = None, time.monotonic()
+        if is_explicit:
+            reaction_id, reaction_started_at = self._add_working_reaction(message)
         try:
             self.store.save_source_message(message)
             self.store.append_audit_log("source_message_received", {
@@ -81,8 +87,8 @@ class MessageHandler:
             if self._is_system_noise(message.text):
                 return {"handled": False, "reason": "system_noise"}
             if message.chat_type == "group":
-                return self._handle_group_message(message)
-            return self._handle_private_message(message)
+                return self._handle_group_message(message, reply_context)
+            return self._handle_private_message(message, reply_context)
         finally:
             if reaction_id:
                 if not self.feishu.dry_run:
@@ -91,8 +97,9 @@ class MessageHandler:
                         time.sleep(WORKING_REACTION_MIN_SECONDS - elapsed)
                 self.feishu.remove_reaction(message.id, reaction_id)
 
-    def _handle_group_message(self, message: SourceMessage) -> Dict[str, Any]:
-        reply_context = self._resolve_reply_context(message)
+    def _handle_group_message(self, message: SourceMessage, reply_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if reply_context is None:
+            reply_context = self._resolve_reply_context(message)
         if "生成今日进度看板" in message.text or "生成看板" in message.text or "进度看板" in message.text:
             artifact = self.dashboard.generate()
             publish = self.feishu.publish_file(artifact.html_path)
@@ -119,11 +126,17 @@ class MessageHandler:
 
         command = parse_task_command(message.text, message.mentions, self.config.feishu.bot_open_id)
         if not command.should_create:
+            field_result = self._maybe_reply_missing_task_field(message, "group", command.reason) if has_task_intent(message.text) else None
+            if field_result:
+                return field_result
             ai_result = self._maybe_handle_ai_intent(message, "group", reply_context)
             if ai_result:
                 return ai_result
-            self._reply(message, "group", "抱歉，我没有识别到有效的指令。\n目前支持的操作有：\n- 创建/安排任务\n- 对我回复接受、打回、完成某任务\n- 回复具体进度")
-            return {"handled": True, "action": "unrecognized_command", "reason": command.reason}
+            is_explicit = any(m.open_id == self.config.feishu.bot_open_id for m in message.mentions) or reply_context is not None
+            if is_explicit:
+                self._reply(message, "group", "抱歉，我没有识别到有效的指令。\n目前支持的操作有：\n- 创建/安排任务\n- 对我回复接受、打回、完成某任务\n- 回复具体进度")
+                return {"handled": True, "action": "unrecognized_command", "reason": command.reason}
+            return {"handled": False, "reason": "not_directed_at_bot"}
         key = f"{message.id}:create_task"
         if self.store.has_idempotency_key(key):
             return {"handled": True, "action": "idempotent_skip"}
@@ -141,12 +154,22 @@ class MessageHandler:
         self.store.set_idempotency_key(key, result)
         return result
 
-    def _handle_private_message(self, message: SourceMessage) -> Dict[str, Any]:
+    def _handle_private_message(self, message: SourceMessage, reply_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if reply_context is None:
+            reply_context = self._resolve_reply_context(message)
         sender = self._resolve_private_sender(message)
         if sender:
             message.sender_open_id = sender.open_id
             message.sender_name = sender.name
             self.store.save_source_message(message)
+        elif message.sender_open_id:
+            self.feishu.send_group_text(
+                f"无法识别私聊用户：{message.sender_open_id}。请管理员在配置 members 中绑定该用户后再处理。",
+                self.config.feishu.group_chat_id,
+            )
+            self.feishu.send_private_text(message.sender_open_id, "暂未识别你的身份，请联系管理员完成成员绑定。")
+            self.store.append_audit_log("unknown_user", {"open_id": message.sender_open_id, "chat_id": message.chat_id})
+            return {"handled": True, "action": "unknown_user"}
         reply_context = self._resolve_reply_context(message)
         if self._should_treat_as_standup(message, reply_context):
             standup = parse_standup(message.sender_open_id, message.sender_name, message.text, message.id)
@@ -177,6 +200,18 @@ class MessageHandler:
         self._reply(message, "private", "抱歉，我没有识别到有效的指令。\n你可以对我说：创建任务、安排一下，或者向我发送今日站会报告。")
         return {"handled": True, "action": "unrecognized_command", "reason": "no_private_command"}
 
+    def _maybe_reply_missing_task_field(self, message: SourceMessage, source: str, reason: str) -> Optional[Dict[str, Any]]:
+        prompts = {
+            "no_assignee_mentioned": "请 @ 任务负责人后再创建任务。",
+            "missing_title": "请补充任务标题，例如：@AI交付助理 @张三 创建任务：完成登录接口错误码统一。",
+        }
+        text = prompts.get(reason)
+        if not text:
+            return None
+        self._reply(message, source, text)
+        self.store.append_audit_log("task_field_missing", {"message_id": message.id, "reason": reason})
+        return {"handled": True, "action": "task_field_missing", "reason": reason}
+
     def _create_task_from_command(self, message: SourceMessage, command: ParsedTaskCommand) -> Dict[str, Any]:
         if command.missing_primary_owner:
             task = self._build_task(message, command, status=TASK_STATUS_PENDING_PRIMARY_OWNER, tapd_story_id=None, tapd_url=None)
@@ -201,10 +236,23 @@ class MessageHandler:
             return {"handled": True, "action": "pending_primary_owner", "task_id": task.id}
 
         if command.is_independent and len(command.assignees) > 1:
-            parent = self._build_task(message, command, status=TASK_STATUS_PENDING_CONFIRMATION, tapd_story_id=None, tapd_url=None)
+            owner = command.primary_owner or command.assignees[0]
+            description = self._task_description(message, command)
+            tapd_result = self.tapd.create_story(
+                title=f"父任务：{command.title}",
+                owner=owner.name,
+                priority_label=command.tapd_priority_label,
+                due_date=command.due_date,
+                description=description,
+            )
+            tapd_story_id = tapd_result.story_id if tapd_result.ok else None
+            tapd_url = tapd_result.url if tapd_result.ok else None
+
+            parent = self._build_task(message, command, status=TASK_STATUS_PENDING_CONFIRMATION, tapd_story_id=tapd_story_id, tapd_url=tapd_url)
             parent.title = f"父任务：{command.title}"
             parent.is_draft = True
             self.store.save_task(parent)
+
             child_ids: List[str] = []
             for assignee in command.assignees:
                 child_command = ParsedTaskCommand(
@@ -219,7 +267,7 @@ class MessageHandler:
                     acceptance_criteria=command.acceptance_criteria,
                     description=command.description,
                 )
-                child = self._create_single_task(message, child_command, parent_id=parent.id)
+                child = self._create_single_task(message, child_command, parent_id=tapd_story_id)
                 child_ids.append(child["task_id"])
             self.feishu.send_reply_text(message.id, f"已创建父任务和 {len(child_ids)} 个子任务，等待各负责人确认。")
             return {"handled": True, "action": "independent_tasks_created", "parent_id": parent.id, "child_ids": child_ids}
@@ -387,7 +435,7 @@ class MessageHandler:
                 self.store.append_audit_log("task_created_after_owner_set", {"task_id": task.id, "title": task.title, "owner": target_mention.name})
                 return {"handled": True, "action": "task_created", "task_id": task.id}
 
-        match = re.search(r"(接受|拒绝|验收通过|打回)\s*([A-Za-z0-9_-]+|\d{6,})", text)
+        match = re.search(r"(接受|拒绝|需要澄清|验收通过|打回)\s*([A-Za-z0-9_-]+|\d{6,})", text)
         if match:
             action, identifier = match.group(1), match.group(2)
             task_data = self.store.find_task(identifier)
@@ -407,7 +455,7 @@ class MessageHandler:
             self._reply(message, source, "请引用对应任务消息回复，或直接带上任务ID。")
             return {"handled": True, "action": "task_context_required"}
 
-        context_action = re.match(r"^\s*(接受|拒绝|验收通过|打回)\s*$", text)
+        context_action = re.match(r"^\s*(接受|拒绝|需要澄清|验收通过|打回)(?:[:：].+)?\s*$", text)
         if context_action and contextual_task:
             return self._apply_action(message, source, contextual_task, context_action.group(1), text)
         if context_action and not contextual_task:
@@ -429,18 +477,32 @@ class MessageHandler:
                 return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", content, None)
             return self._save_progress(message, source, task_data, content)
 
+        direct_match = re.match(r"(.+?)\s*(已完成|完成了|阻塞了|阻塞|进度[:：])(.+)?$", text)
+        if direct_match:
+            title = direct_match.group(1).strip()
+            if title and title not in {"任务", "这个任务", "该任务"}:
+                task_data = self._find_task_by_title(title)
+                if task_data:
+                    status_word = direct_match.group(2)
+                    content = text
+                    if "阻塞" in status_word:
+                        return self._set_task_status(message, source, task_data, TASK_STATUS_BLOCKED, "blocked", content, None)
+                    if "完成" in status_word:
+                        return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", content, None)
+                    return self._save_progress(message, source, task_data, content)
+
         if contextual_task:
-            if re.match(r"^\s*(已完成|完成了)\s*$", text):
-                return self._set_task_status(message, source, contextual_task, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", text, None)
-            if re.match(r"^\s*(阻塞|阻塞了)(?:[:：].+)?$", text):
+            if re.match(r"^\s*(?:这个)?(?:该)?(?:任务)?\s*(已完成|完成了)\s*$", text):
+                return self._set_task_status(message, source, contextual_task, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", text, TAPD_STATUS_TESTING)
+            if re.match(r"^\s*(?:这个)?(?:该)?(?:任务)?\s*(阻塞|阻塞了)(?:[:：].+)?$", text):
                 return self._set_task_status(message, source, contextual_task, TASK_STATUS_BLOCKED, "blocked", text, None)
             if text.startswith("进度") or reply_context and reply_context.get("context_type") == "task_confirmation":
                 return self._save_progress(message, source, contextual_task, text)
         return None
 
     def _apply_action(self, message: SourceMessage, source: str, task_data: Dict[str, Any], action: str, text: str) -> Dict[str, Any]:
-        if action in {"接受", "拒绝"} and message.sender_open_id != task_data.get("primary_owner_open_id"):
-            self._reply(message, source, "只有任务负责人可以确认或拒绝该任务。")
+        if action in {"接受", "拒绝", "需要澄清"} and message.sender_open_id != task_data.get("primary_owner_open_id"):
+            self._reply(message, source, "只有任务负责人可以确认、拒绝或要求澄清该任务。")
             return {"handled": True, "action": "unauthorized"}
         if action in {"验收通过", "打回"} and message.sender_open_id != task_data.get("creator_open_id"):
             self._reply(message, source, "只有任务创建人可以验收或打回该任务。")
@@ -449,6 +511,8 @@ class MessageHandler:
             return self._set_task_status(message, source, task_data, TASK_STATUS_CONFIRMED, "accepted_by_owner", text, TAPD_STATUS_IN_PROGRESS)
         if action == "拒绝":
             return self._set_task_status(message, source, task_data, TASK_STATUS_CANCELLED, "rejected_by_owner", text, TAPD_STATUS_CANCELLED)
+        if action == "需要澄清":
+            return self._request_clarification(message, source, task_data, text)
         if action == "验收通过":
             return self._set_task_status(message, source, task_data, TASK_STATUS_ACCEPTED, "accepted", text, TAPD_STATUS_DONE)
         if action == "打回":
@@ -469,11 +533,19 @@ class MessageHandler:
             tapd_result = self.tapd.update_story_status(task_data["tapd_story_id"], tapd_status)
             if not tapd_result.ok:
                 self.store.append_audit_log("tapd_update_failed", {"task_id": task_data["id"], "error": tapd_result.error})
+        if status == TASK_STATUS_BLOCKED:
+            blocked_at = task_data.get("blocked_at") or utc_now_iso()
+            task_data["blocked_at"] = blocked_at
+            task_data["blocker_info"] = self._parse_blocker_info(content, message, blocked_at)
+        else:
+            task_data["blocked_at"] = None
+            task_data["blocker_info"] = {}
         task_data["status"] = status
         task_data["updated_at"] = utc_now_iso()
         task = Task(**task_data)
         self.store.save_task(task)
-        self._save_update(task, message.sender_open_id, message.sender_name, update_type, content, source, message.id)
+        metadata = task.blocker_info if update_type == "blocked" else {}
+        self._save_update(task, message.sender_open_id, message.sender_name, update_type, content, source, message.id, metadata)
         if update_type == "accepted_by_owner":
             result = self.feishu.send_private_text(
                 task.primary_owner_open_id,
@@ -493,7 +565,7 @@ class MessageHandler:
                     )
                 )
             if source == "private" and task.source_message_id:
-                self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 已接受任务：{task.title}")
+                self._notify_source_group(task, f"负责人 {message.sender_name} 已接受任务：{task.title}")
         elif update_type == "owner_marked_done":
             text = f"{task.primary_owner_name} 已标记任务完成，等待创建人验收：{task.title}\n可直接引用本消息回复：验收通过 / 打回"
             target_chat_id = message.chat_id if source == "group" else self.config.feishu.group_chat_id
@@ -517,9 +589,21 @@ class MessageHandler:
             self._reply(message, source, f"任务状态已更新：{task.title} -> {status}")
             if source == "private" and task.source_message_id:
                 action_text = content.strip() if content.strip() else status
-                self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 更新了任务状态：{status}\n回复内容：{action_text}")
+                self._notify_source_group(task, f"负责人 {message.sender_name} 更新了任务状态：{status}\n回复内容：{action_text}")
         self.store.append_audit_log("task_status_updated", {"task_id": task.id, "status": status, "update_type": update_type})
         return {"handled": True, "action": update_type, "task_id": task.id, "status": status}
+
+    def _request_clarification(self, message: SourceMessage, source: str, task_data: Dict[str, Any], content: str) -> Dict[str, Any]:
+        task = Task(**task_data)
+        self._save_update(task, message.sender_open_id, message.sender_name, "clarification_requested", content, source, message.id)
+        self._reply(message, source, f"已记录澄清请求：{task.title}")
+        notice = f"负责人 {message.sender_name} 对任务提出澄清请求：{task.title}\n回复内容：{content}"
+        if source == "private" and task.source_message_id:
+            self._notify_source_group(task, notice)
+        elif source == "group":
+            self.feishu.send_reply_text(message.id, notice)
+        self.store.append_audit_log("task_clarification_requested", {"task_id": task.id, "source_message_id": message.id})
+        return {"handled": True, "action": "clarification_requested", "task_id": task.id, "status": task.status}
 
     def _maybe_handle_ai_intent(
         self,
@@ -606,7 +690,7 @@ class MessageHandler:
         self._save_update(task, message.sender_open_id, message.sender_name, "due_date_updated", content, source, message.id)
         self._reply(message, source, f"截止时间已更新：{task.title} -> {due_date}")
         if source == "private" and task.source_message_id:
-            self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 更新了任务截止时间为：{due_date}")
+            self._notify_source_group(task, f"负责人 {message.sender_name} 更新了任务截止时间为：{due_date}")
         self.store.append_audit_log("task_due_date_updated", {"task_id": task.id, "due_date": due_date})
         return {"handled": True, "action": "due_date_updated", "task_id": task.id, "due_date": due_date}
 
@@ -670,7 +754,7 @@ class MessageHandler:
         self._save_update(task, message.sender_open_id, message.sender_name, "ai_task_updated", content, source, message.id)
         self._reply(message, source, f"已更新任务：{task.title}\n{content}")
         if source == "private" and task.source_message_id:
-            self.feishu.send_reply_text(task.source_message_id, f"{message.sender_name} 更新了任务：{task.title}\n{content}")
+            self._notify_source_group(task, f"{message.sender_name} 更新了任务：{task.title}\n{content}")
         self.store.append_audit_log("task_ai_updated", {"task_id": task.id, "changes": changes})
         return {"handled": True, "action": "ai_task_updated", "task_id": task.id, "changes": changes}
 
@@ -679,7 +763,7 @@ class MessageHandler:
         self._save_update(task, message.sender_open_id, message.sender_name, "progress", content, source, message.id)
         self._reply(message, source, f"已记录任务进度：{task.title}")
         if source == "private" and task.source_message_id:
-            self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 更新了任务进度：\n{content}")
+            self._notify_source_group(task, f"负责人 {message.sender_name} 更新了任务进度：\n{content}")
         return {"handled": True, "action": "progress_saved", "task_id": task.id}
 
     def _save_task_plan(self, message: SourceMessage, source: str, task_data: Dict[str, Any], content: str) -> Dict[str, Any]:
@@ -690,7 +774,7 @@ class MessageHandler:
         self._save_update(task, message.sender_open_id, message.sender_name, "task_plan", content, source, message.id)
         self._reply(message, source, f"已保存任务计划：{task.title}")
         if source == "private" and task.source_message_id:
-            self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 补充了任务计划：\n{content}")
+            self._notify_source_group(task, f"负责人 {message.sender_name} 补充了任务计划：\n{content}")
         self.store.append_audit_log("task_plan_saved", {"task_id": task.id, "source_message_id": message.id})
         return {"handled": True, "action": "task_plan_saved", "task_id": task.id}
 
@@ -788,6 +872,38 @@ class MessageHandler:
         value = match.group(1).strip()
         return value.startswith("是") or value.startswith("需要") or "需要" in value
 
+    def _parse_blocker_info(self, text: str, message: SourceMessage, blocked_at: str) -> Dict[str, Any]:
+        reason = self._extract_blocker_reason(text)
+        helper_names = [
+            mention.name
+            for mention in message.mentions
+            if mention.open_id != self.config.feishu.bot_open_id and mention.open_id != message.sender_open_id
+        ]
+        helper_text = self._extract_assistance_text(text)
+        if helper_text:
+            helper_names.extend([item for item in re.split(r"[、,，\s]+", helper_text) if item])
+        seen_helpers = []
+        for name in helper_names:
+            if name and name not in seen_helpers:
+                seen_helpers.append(name)
+        return {
+            "reason": reason or text,
+            "blocked_by_open_id": message.sender_open_id,
+            "blocked_by_name": message.sender_name,
+            "assistance_needed": seen_helpers,
+            "blocked_at": blocked_at,
+            "source_message_id": message.id,
+            "suggested_action": "确认协助人和下一步恢复动作",
+        }
+
+    def _extract_blocker_reason(self, text: str) -> str:
+        match = re.search(r"(?:原因是|原因[:：]|因为)(.+?)(?:，?需要|。|$)", text)
+        return match.group(1).strip(" ，,。；;") if match else ""
+
+    def _extract_assistance_text(self, text: str) -> str:
+        match = re.search(r"需要(.+?)协助", text)
+        return match.group(1).strip(" ：:，,。；;") if match else ""
+
     def _apply_ai_status_action(
         self,
         message: SourceMessage,
@@ -795,7 +911,7 @@ class MessageHandler:
         task_data: Dict[str, Any],
         action: str,
     ) -> Optional[Dict[str, Any]]:
-        if action in {"接受", "拒绝", "验收通过", "打回"}:
+        if action in {"接受", "拒绝", "需要澄清", "验收通过", "打回"}:
             return self._apply_action(message, source, task_data, action, action)
         if action in {"已完成", "完成了"}:
             return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", action, None)
@@ -899,7 +1015,7 @@ class MessageHandler:
             f"验收标准：{'；'.join(task.acceptance_criteria) or '未设置'}\n"
             f"提出人：{task.creator_name}\n"
             f"链接：{task.tapd_url or '未生成'}\n\n"
-            f"回复：接受{task.tapd_story_id or task.id} / 拒绝{task.tapd_story_id or task.id} 或者引用消息进行回复"
+            f"回复：接受{task.tapd_story_id or task.id} / 拒绝{task.tapd_story_id or task.id} / 需要澄清{task.tapd_story_id or task.id}，也可以引用消息回复"
         )
 
     def _group_created_text(self, task: Task) -> str:
@@ -923,6 +1039,7 @@ class MessageHandler:
         content: str,
         source: str,
         source_message_id: str | None,
+        metadata: Dict[str, Any] | None = None,
     ) -> None:
         source_message = self.store.get_source_message(source_message_id)
         ai_result = {"type": update_type, "parser": "structured_event", "content": content}
@@ -945,6 +1062,7 @@ class MessageHandler:
             ai_result=ai_result,
             confidence=confidence,
             trace=trace,
+            metadata=metadata or {},
             created_at=utc_now_iso(),
         )
         self.store.save_task_update(update)
@@ -1012,6 +1130,23 @@ class MessageHandler:
             self.feishu.send_reply_text(message.id, text)
         else:
             self.feishu.send_private_text(message.sender_open_id, text)
+
+    def _notify_source_group(self, task: Task, text: str, context_type: str = "task_status_notice") -> None:
+        if not task.source_message_id:
+            return
+        res = self.feishu.send_reply_text(task.source_message_id, text)
+        if res.message_id:
+            self.store.save_bot_message_context(
+                BotMessageContext(
+                    message_id=res.message_id,
+                    context_type=context_type,
+                    created_at=utc_now_iso(),
+                    chat_id=task.source_group_id or "",
+                    task_id=task.id,
+                    task_title=task.title,
+                    metadata={"tapd_story_id": task.tapd_story_id or ""},
+                )
+            )
 
     def _ai_clarification(
         self,
@@ -1137,7 +1272,7 @@ class MessageHandler:
             if task:
                 return task
 
-        exact_actions = {"接受", "拒绝", "验收通过", "打回", "已完成", "完成了", "阻塞", "阻塞了"}
+        exact_actions = {"接受", "拒绝", "需要澄清", "验收通过", "打回", "已完成", "完成了", "阻塞", "阻塞了"}
         normalized = (normalized_text if normalized_text is not None else message.text).strip().splitlines()[0].strip()
         if normalized not in exact_actions and not normalized.startswith("进度"):
             return None

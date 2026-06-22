@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from delivery_ops_bridge.adapters.feishu import WORKING_REACTION_EMOJI_TYPE, SendResult
 from delivery_ops_bridge.adapters.llm import LLMResult
 from delivery_ops_bridge.models import BotMessageContext, Task, utc_now_iso
+from delivery_ops_bridge.services.jobs import ScheduledJobs
 from delivery_ops_bridge.services.message_intent import IntentFields, IntentTaskRef, MessageIntent
 from delivery_ops_bridge.services.summaries import build_daily_summary, render_daily_summary
 from tests.conftest import feishu_event, mention
@@ -78,8 +79,8 @@ def test_working_reaction_uses_on_it_emoji(handler):
 
     result = handler.handle_event(feishu_event("普通聊天", message_id="om_working"))
 
-    assert result["handled"] is True
-    assert result["action"] == "unrecognized_command"
+    assert result["handled"] is False
+    assert result["reason"] == "not_directed_at_bot"
     assert reactions == [("om_working", WORKING_REACTION_EMOJI_TYPE)]
     assert removals == [("om_working", "reaction_1")]
 
@@ -119,6 +120,23 @@ def test_group_context_required_reply_quotes_source_message(handler):
 
     assert result["action"] == "task_context_required"
     assert replies == [("om_group_accept_without_context", "请引用对应任务消息回复，或直接带上任务ID。")]
+
+
+def test_explicit_create_missing_assignee_prompts_for_owner(handler):
+    replies = []
+    handler.feishu.send_reply_text = lambda message_id, text: replies.append((message_id, text)) or SendResult(ok=True, raw={})
+
+    result = handler.handle_event(
+        feishu_event(
+            "@AI交付助理 创建任务：完成登录接口错误码统一",
+            message_id="om_missing_assignee",
+            mentions=[mention("ou_bot", "AI交付助理")],
+        )
+    )
+
+    assert result["action"] == "task_field_missing"
+    assert result["reason"] == "no_assignee_mentioned"
+    assert replies == [("om_missing_assignee", "请 @ 任务负责人后再创建任务。")]
 
 
 def test_group_reply_updates_due_date_from_task_context(handler):
@@ -273,7 +291,8 @@ def test_ai_create_task_requires_explicit_assignee_mention(handler):
     )
 
     assert result["handled"] is True
-    assert result["action"] == "unrecognized_command"
+    assert result["action"] == "task_field_missing"
+    assert result["reason"] == "no_assignee_mentioned"
     assert handler.store.list_tasks() == []
 
 
@@ -282,9 +301,30 @@ def test_plain_chat_does_not_create_task(handler):
 
     result = handler.handle_event(event)
 
-    assert result["handled"] is True
-    assert result["action"] == "unrecognized_command"
+    assert result["handled"] is False
+    assert result["reason"] == "not_directed_at_bot"
     assert handler.store.list_tasks() == []
+
+
+def test_unknown_private_user_notifies_admin(handler):
+    private_messages = []
+    group_messages = []
+    handler.feishu.send_private_text = lambda open_id, text: private_messages.append((open_id, text)) or SendResult(ok=True, raw={})
+    handler.feishu.send_group_text = lambda text, chat_id=None: group_messages.append((chat_id, text)) or SendResult(ok=True, raw={})
+
+    result = handler.handle_event(
+        feishu_event(
+            "今天站会：完成登录接口",
+            message_id="om_unknown_private",
+            chat_type="private",
+            sender="ou_unknown",
+            chat_id="oc_private_unknown",
+        )
+    )
+
+    assert result["action"] == "unknown_user"
+    assert private_messages == [("ou_unknown", "暂未识别你的身份，请联系管理员完成成员绑定。")]
+    assert group_messages and "无法识别私聊用户：ou_unknown" in group_messages[0][1]
 
 
 def test_duplicate_source_message_is_idempotent(handler):
@@ -334,6 +374,35 @@ def test_owner_can_accept_task(handler):
 
     assert result["action"] == "accepted_by_owner"
     assert handler.store.list_tasks()[0]["status"] == "confirmed"
+
+
+def test_owner_can_request_clarification(handler):
+    create_event = feishu_event(
+        "@AI交付助理 @张三 创建任务：完成登录接口错误码统一",
+        mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+        message_id="om_clarify_create",
+    )
+    created = handler.handle_event(create_event)
+    replies = []
+    handler.feishu.send_private_text = lambda open_id, text: replies.append((open_id, text)) or SendResult(ok=True, raw={})
+    handler.feishu.send_reply_text = lambda message_id, text: replies.append((message_id, text)) or SendResult(ok=True, raw={})
+
+    result = handler.handle_event(
+        feishu_event(
+            f"需要澄清{created['tapd_story_id']}，验收环境是哪一个？",
+            message_id="om_clarify",
+            chat_type="private",
+            sender="ou_zhangsan",
+            chat_id="oc_private_zhangsan",
+        )
+    )
+
+    task = handler.store.get_task(created["task_id"])
+    updates = handler.store.list_task_updates(created["task_id"])
+    assert result["action"] == "clarification_requested"
+    assert task["status"] == "pending_confirmation"
+    assert any(item["update_type"] == "clarification_requested" for item in updates)
+    assert any("澄清请求" in item[1] for item in replies)
 
 
 def test_private_standup_is_saved(handler):
@@ -427,6 +496,95 @@ def test_dashboard_generation(handler):
     assert "阻塞事项" in html
     assert "风险提示" in html
     assert "今日站会摘要" in html
+
+
+def test_blocked_task_saves_structured_info_and_enters_views_after_24h(handler):
+    created = handler.handle_event(
+        feishu_event(
+            "@AI交付助理 @张三 创建任务：完成登录接口错误码统一",
+            mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+            message_id="om_blocked_create",
+        )
+    )
+
+    result = handler.handle_event(
+        feishu_event(
+            "@AI交付助理 任务 登录接口错误码统一 阻塞了，原因：等待测试环境恢复，需要李四协助",
+            mentions=[mention("ou_bot", "AI交付助理"), mention("ou_lisi", "李四")],
+            message_id="om_blocked",
+            sender="ou_zhangsan",
+        )
+    )
+
+    task = handler.store.get_task(created["task_id"])
+    assert result["action"] == "blocked"
+    assert task["status"] == "blocked"
+    assert task["blocker_info"]["reason"] == "等待测试环境恢复"
+    assert task["blocker_info"]["blocked_by_name"] == "张三"
+    assert task["blocker_info"]["assistance_needed"] == ["李四"]
+
+    task["blocked_at"] = (datetime.utcnow() - timedelta(hours=25)).replace(microsecond=0).isoformat() + "Z"
+    handler.store.save_task(Task(**task))
+    artifact = handler.dashboard.generate(date.today())
+    html = handler.config.data_path.joinpath("dashboards", artifact.html_path.split("/")[-1]).read_text(encoding="utf-8")
+    summary = build_daily_summary(handler.store, "oc_group", date.today())
+
+    assert "等待测试环境恢复" in html
+    assert any(item["type"] == "blocker" and item["title"] == "完成登录接口错误码统一" for item in summary.blockers)
+
+
+def test_overdue_scan_sends_staged_reminders_and_logs_status(handler):
+    base_day = date(2026, 6, 22)
+    task_ids = []
+    for idx, (title, due) in enumerate(
+        [
+            ("明天到期", base_day + timedelta(days=1)),
+            ("今天到期", base_day),
+            ("超期一天", base_day - timedelta(days=1)),
+            ("超期两天", base_day - timedelta(days=2)),
+        ],
+        1,
+    ):
+        created = handler.handle_event(
+            feishu_event(
+                f"@AI交付助理 @张三 创建任务：{title}",
+                mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+                message_id=f"om_overdue_create_{idx}",
+            )
+        )
+        task = handler.store.get_task(created["task_id"])
+        task["due_date"] = due.isoformat()
+        task["status"] = "confirmed"
+        handler.store.save_task(Task(**task))
+        task_ids.append(created["task_id"])
+
+    private_messages = []
+    group_messages = []
+    handler.feishu.send_private_text = lambda open_id, text: private_messages.append((open_id, text)) or SendResult(ok=True, raw={})
+    handler.feishu.send_group_text = lambda text, chat_id=None: group_messages.append((chat_id, text)) or SendResult(ok=True, raw={})
+    jobs = ScheduledJobs(handler.config, handler.store, handler.feishu, handler.dashboard)
+
+    result = jobs.overdue_scan(base_day)
+
+    assert result == {"due_tomorrow": 1, "due_today": 1, "overdue_day1": 1, "overdue_risk": 1}
+    assert len(private_messages) == 4
+    assert any("明天截止" in text for _, text in private_messages)
+    assert any("今天截止" in text for _, text in private_messages)
+    assert any("超期 1 天" in text for _, text in private_messages)
+    assert any("超期超过 2 天" in text for _, text in private_messages)
+    assert len(group_messages) == 1
+    assert "超期两天" in group_messages[0][1]
+    assert handler.store.get_task(task_ids[2])["status"] == "overdue"
+    assert handler.store.get_task(task_ids[3])["status"] == "overdue"
+    assert any(item["update_type"] == "overdue" for item in handler.store.list_task_updates(task_ids[2]))
+
+    private_messages.clear()
+    group_messages.clear()
+    second = jobs.overdue_scan(base_day)
+
+    assert second == {"due_tomorrow": 0, "due_today": 0, "overdue_day1": 0, "overdue_risk": 0}
+    assert private_messages == []
+    assert group_messages == []
 
 
 def test_private_reply_accept_uses_task_context(handler):
@@ -650,3 +808,19 @@ def test_daily_summary_prefers_ai_classification_with_traceability(handler):
     assert summary.blockers[0]["confidence"] == 0.91
     assert summary.blockers[0]["trace"]["source_message_id"] == "om_summary_ai"
     assert summary.blockers[0]["trace"]["raw_text"] == "测试环境登录失败，今天回归被挡住。"
+
+
+def test_daily_summary_ai_confidence_filter_and_possible_label(handler):
+    handler.handle_event(feishu_event("测试环境登录失败。", message_id="om_summary_medium", mentions=[]))
+    handler.handle_event(feishu_event("无效闲聊。", message_id="om_summary_low", mentions=[]))
+    llm = FakeSummaryLLM(
+        [
+            {"message_id": "om_summary_medium", "type": "blocker", "title": "测试环境阻塞", "confidence": 0.7},
+            {"message_id": "om_summary_low", "type": "risk", "title": "低置信风险", "confidence": 0.5},
+        ]
+    )
+
+    summary = build_daily_summary(handler.store, "oc_group", date(2026, 6, 18), llm)
+
+    assert [item["title"] for item in summary.blockers] == ["可能：测试环境阻塞"]
+    assert summary.risks == []
