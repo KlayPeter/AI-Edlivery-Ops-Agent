@@ -549,7 +549,7 @@ class MessageHandler:
         if update_type == "accepted_by_owner":
             result = self.feishu.send_private_text(
                 task.primary_owner_open_id,
-                f"已确认接受任务：{task.title}\n请补充任务计划：预计完成时间、拆分步骤、依赖对象、风险点、是否需要协助。",
+                f"已确认接受任务：{task.title}\n请补充任务计划：\n\n预计完成时间：\n拆分步骤：\n依赖对象：\n风险点：\n是否需要协助：",
             )
             if result.message_id:
                 self.store.save_bot_message_context(

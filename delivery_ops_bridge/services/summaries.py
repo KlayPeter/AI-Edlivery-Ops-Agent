@@ -133,6 +133,11 @@ def render_daily_summary(summary: DailySummary) -> str:
     if summary.blockers:
         for idx, item in enumerate(summary.blockers, 1):
             lines.append(f"{idx}. {item.get('title') or item.get('content', '')}")
+            ai = item.get("ai_result") or {}
+            related = "、".join(ai.get("related_users", [])) or "待定"
+            lines.append(f"   - 被阻塞人：{item.get('sender_name', '未知')}")
+            lines.append(f"   - 需要协助人：{related}")
+            lines.append(f"   - 建议动作：跟进解决阻塞")
             lines.append(f"   - 来源：{_source_text(item)}")
     else:
         lines.append("暂无明确阻塞。")
@@ -140,6 +145,10 @@ def render_daily_summary(summary: DailySummary) -> str:
     if summary.decisions:
         for idx, item in enumerate(summary.decisions, 1):
             lines.append(f"{idx}. {item.get('title', '')}")
+            ai = item.get("ai_result") or {}
+            related = "、".join(ai.get("related_users", [])) or item.get('sender_name', '未知')
+            lines.append(f"   - 决策人：{related}")
+            lines.append(f"   - 影响范围：团队全员或相关人")
             lines.append(f"   - 来源：{_source_text(item)}")
     else:
         lines.append("暂无明确决策。")
@@ -148,6 +157,10 @@ def render_daily_summary(summary: DailySummary) -> str:
         for idx, item in enumerate(summary.risks, 1):
             status = f"，当前状态：{STATUS_MAP.get(item.get('status', ''), item.get('status', ''))}" if item.get("status") else ""
             lines.append(f"{idx}. {item.get('title', '')}{status}")
+            ai = item.get("ai_result") or {}
+            risk_level = ai.get("risk_level") or "中"
+            lines.append(f"   - 风险等级：{risk_level}")
+            lines.append(f"   - 建议动作：跟进风险情况")
             lines.append(f"   - 来源：{_source_text(item)}")
     else:
         lines.append("暂无明显风险。")
