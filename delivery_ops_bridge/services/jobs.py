@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List
+import json
 
 from ..adapters.llm import LLMAdapter
 from ..adapters.feishu import FeishuAdapter
@@ -113,8 +114,6 @@ class ScheduledJobs:
                 f"六、需要决策\n"
                 f"1. xxx\n"
                 f"   - 建议决策人：xxx\n\n"
-                f"七、未提交情况\n"
-                f"{missing_text}\n\n"
                 f"请保持格式完全一致，不要输出多余的Markdown代码块符号（如```）。"
             )
             res = self.llm.chat(prompt, payload)
@@ -124,6 +123,7 @@ class ScheduledJobs:
                     lines = text.split("\n")
                     if len(lines) > 2:
                         text = "\n".join(lines[1:-1]).strip()
+                text += f"\n\n七、未提交情况\n{missing_text}"
                 self.feishu.send_group_text(text, self.config.feishu.group_chat_id)
                 return {"submitted": len(standups), "missing": len(missing)}
 
