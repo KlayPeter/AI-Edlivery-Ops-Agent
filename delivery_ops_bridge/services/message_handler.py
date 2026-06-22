@@ -4,7 +4,7 @@ import re
 from datetime import date
 from typing import Any, Dict, List, Optional
 
-from ..adapters.feishu import FeishuAdapter, FeishuEventParser
+from ..adapters.feishu import WORKING_REACTION_EMOJI_TYPE, FeishuAdapter, FeishuEventParser
 from ..adapters.tapd import TapdAdapter
 from ..config import AppConfig
 from ..models import (
@@ -58,7 +58,7 @@ class MessageHandler:
         if message is None:
             return {"handled": False, "reason": "not_message_event"}
         
-        reaction_id = self.feishu.add_reaction(message.id, "WIP")
+        reaction_id = self.feishu.add_reaction(message.id, WORKING_REACTION_EMOJI_TYPE)
         try:
             self.store.save_source_message(message)
             self.store.append_audit_log("source_message_received", {
@@ -95,7 +95,7 @@ class MessageHandler:
                 text = f"今日进度看板已生成：\n{artifact.html_path}"
             else:
                 text = f"今日进度看板已生成，但飞书云盘发布失败：\n{self.feishu.explain_error(publish)}\n本地文件：{artifact.html_path}"
-            self.feishu.send_group_text(text, message.chat_id)
+            self.feishu.send_reply_text(message.id, text)
             self.store.append_audit_log("dashboard_generated", {"artifact_path": artifact.html_path, "public_url": artifact.public_url})
             return {"handled": True, "action": "dashboard", "artifact": artifact.html_path}
 
@@ -136,9 +136,9 @@ class MessageHandler:
             task.is_draft = True
             self.store.save_task(task)
             assignees = "、".join(command.assignee_names if hasattr(command, "assignee_names") else [item.name for item in command.assignees])
-            self.feishu.send_group_text(
+            self.feishu.send_reply_text(
+                message.id,
                 f"已识别到多人任务，请指定主负责人：\n\n任务：{command.title}\n参与人：{assignees}\n\n请回复：主负责人 @某某",
-                message.chat_id,
             )
             return {"handled": True, "action": "pending_primary_owner", "task_id": task.id}
 
@@ -163,7 +163,7 @@ class MessageHandler:
                 )
                 child = self._create_single_task(message, child_command, parent_id=parent.id)
                 child_ids.append(child["task_id"])
-            self.feishu.send_group_text(f"已创建父任务和 {len(child_ids)} 个子任务，等待各负责人确认。", message.chat_id)
+            self.feishu.send_reply_text(message.id, f"已创建父任务和 {len(child_ids)} 个子任务，等待各负责人确认。")
             return {"handled": True, "action": "independent_tasks_created", "parent_id": parent.id, "child_ids": child_ids}
 
         return self._create_single_task(message, command)
@@ -182,7 +182,7 @@ class MessageHandler:
         )
         if not tapd_result.ok:
             self.store.append_audit_log("tapd_create_failed", {"message_id": message.id, "error": tapd_result.error})
-            self.feishu.send_group_text(f"任务创建失败：{tapd_result.error or 'TAPD API 调用失败'}", message.chat_id)
+            self.feishu.send_reply_text(message.id, f"任务创建失败：{tapd_result.error or 'TAPD API 调用失败'}")
             return {"handled": True, "action": "tapd_create_failed", "error": tapd_result.error}
 
         task = self._build_task(
@@ -212,7 +212,7 @@ class MessageHandler:
                     metadata={"tapd_story_id": task.tapd_story_id or ""},
                 )
             )
-        group_result = self.feishu.send_group_text(self._group_created_text(task), message.chat_id)
+        group_result = self.feishu.send_reply_text(message.id, self._group_created_text(task))
         if group_result.message_id:
             self.store.save_bot_message_context(
                 BotMessageContext(
@@ -234,7 +234,7 @@ class MessageHandler:
         source: str,
         reply_context: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
-        text = message.text.strip()
+        text = self._strip_bot_mention(message).strip()
         match = re.search(r"(接受|拒绝|验收通过|打回)\s*([A-Za-z0-9_-]+|\d{6,})", text)
         if match:
             action, identifier = match.group(1), match.group(2)
@@ -244,7 +244,7 @@ class MessageHandler:
                 return {"handled": True, "action": "task_not_found"}
             return self._apply_action(message, source, task_data, action, text)
 
-        contextual_task = self._contextual_task(message, reply_context)
+        contextual_task = self._contextual_task(message, reply_context, normalized_text=text)
         context_action = re.match(r"^\s*(接受|拒绝|验收通过|打回)\s*$", text)
         if context_action and contextual_task:
             return self._apply_action(message, source, contextual_task, context_action.group(1), text)
@@ -328,17 +328,19 @@ class MessageHandler:
                     )
                 )
         elif update_type == "owner_marked_done":
-            result = self.feishu.send_group_text(
-                f"{task.primary_owner_name} 已标记任务完成，等待创建人验收：{task.title}\n可直接引用本消息回复：验收通过 / 打回",
-                self.config.feishu.group_chat_id,
-            )
+            text = f"{task.primary_owner_name} 已标记任务完成，等待创建人验收：{task.title}\n可直接引用本消息回复：验收通过 / 打回"
+            target_chat_id = message.chat_id if source == "group" else self.config.feishu.group_chat_id
+            if source == "group":
+                result = self.feishu.send_reply_text(message.id, text)
+            else:
+                result = self.feishu.send_group_text(text, target_chat_id)
             if result.message_id:
                 self.store.save_bot_message_context(
                     BotMessageContext(
                         message_id=result.message_id,
                         context_type="task_acceptance_prompt",
                         created_at=utc_now_iso(),
-                        chat_id=self.config.feishu.group_chat_id,
+                        chat_id=target_chat_id,
                         task_id=task.id,
                         task_title=task.title,
                         metadata={"tapd_story_id": task.tapd_story_id or ""},
@@ -454,7 +456,7 @@ class MessageHandler:
 
     def _reply(self, message: SourceMessage, source: str, text: str) -> None:
         if source == "group":
-            self.feishu.send_group_text(text, message.chat_id)
+            self.feishu.send_reply_text(message.id, text)
         else:
             self.feishu.send_private_text(message.sender_open_id, text)
 
@@ -482,14 +484,19 @@ class MessageHandler:
                 return context
         return None
 
-    def _contextual_task(self, message: SourceMessage, reply_context: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _contextual_task(
+        self,
+        message: SourceMessage,
+        reply_context: Optional[Dict[str, Any]],
+        normalized_text: str | None = None,
+    ) -> Optional[Dict[str, Any]]:
         if reply_context and reply_context.get("task_id"):
             task = self.store.get_task(reply_context["task_id"])
             if task:
                 return task
 
         exact_actions = {"接受", "拒绝", "验收通过", "打回", "已完成", "完成了", "阻塞", "阻塞了"}
-        normalized = message.text.strip().splitlines()[0].strip()
+        normalized = (normalized_text if normalized_text is not None else message.text).strip().splitlines()[0].strip()
         if normalized not in exact_actions and not normalized.startswith("进度"):
             return None
 
@@ -506,6 +513,16 @@ class MessageHandler:
         if len(candidates) == 1:
             return candidates[0]
         return None
+
+    def _strip_bot_mention(self, message: SourceMessage) -> str:
+        text = message.text
+        for mention in message.mentions:
+            if mention.open_id != self.config.feishu.bot_open_id:
+                continue
+            names = [mention.name, self.config.feishu.bot_name]
+            for name in [item for item in names if item]:
+                text = re.sub(rf"^\s*@?{re.escape(name)}\s*", "", text).strip()
+        return text
 
     def _is_system_noise(self, text: str) -> bool:
         return "<system-reminder>" in text or "<cb_summary>" in text or text.startswith("This is a summary")

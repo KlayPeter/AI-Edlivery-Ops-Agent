@@ -55,3 +55,24 @@ def test_permission_warning_lists_missing_scopes(config_path):
 
     assert "drive:file" in warning
     assert "drive:file:upload" in warning
+
+
+def test_send_reply_text_dry_run_targets_message(config_path):
+    config = load_config(str(config_path))
+    adapter = FeishuAdapter(config.feishu, dry_run=True)
+
+    result = adapter.send_reply_text("om_source", "收到，正在处理。")
+
+    assert result.ok is True
+    assert result.raw["reply_to"] == "om_source"
+    assert result.raw["text"] == "收到，正在处理。"
+
+
+def test_send_reply_text_requires_message_id(config_path):
+    config = load_config(str(config_path))
+    adapter = FeishuAdapter(config.feishu, dry_run=True)
+
+    result = adapter.send_reply_text("", "无法引用")
+
+    assert result.ok is False
+    assert "message_id" in (result.error or "")

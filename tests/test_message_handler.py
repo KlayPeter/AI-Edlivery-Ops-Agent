@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
+
+from delivery_ops_bridge.adapters.feishu import WORKING_REACTION_EMOJI_TYPE, SendResult
 from delivery_ops_bridge.models import BotMessageContext, Task, utc_now_iso
 from tests.conftest import feishu_event, mention
 
@@ -18,6 +21,61 @@ def test_url_like_task_create_creates_tapd_story_and_task(handler):
     assert tasks[0]["primary_owner_open_id"] == "ou_zhangsan"
     assert tasks[0]["priority"] == "P1"
     assert tasks[0]["tapd_story_id"].startswith("dry-")
+
+
+def test_working_reaction_uses_on_it_emoji(handler):
+    reactions = []
+    removals = []
+
+    def add_reaction(message_id, emoji_type=WORKING_REACTION_EMOJI_TYPE):
+        reactions.append((message_id, emoji_type))
+        return "reaction_1"
+
+    handler.feishu.add_reaction = add_reaction
+    handler.feishu.remove_reaction = lambda message_id, reaction_id: removals.append((message_id, reaction_id))
+
+    result = handler.handle_event(feishu_event("普通聊天", message_id="om_working"))
+
+    assert result["handled"] is False
+    assert reactions == [("om_working", WORKING_REACTION_EMOJI_TYPE)]
+    assert removals == [("om_working", "reaction_1")]
+
+
+def test_group_task_create_replies_to_source_message(handler):
+    replies = []
+
+    def send_reply_text(message_id, text):
+        replies.append((message_id, text))
+        return SendResult(ok=True, raw={"reply_to": message_id}, message_id="om_bot_group_notice")
+
+    handler.feishu.send_reply_text = send_reply_text
+    event = feishu_event(
+        "@AI交付助理 @张三 创建任务：完成登录接口错误码统一",
+        message_id="om_group_direct_mention",
+        mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+    )
+
+    result = handler.handle_event(event)
+
+    assert result["action"] == "task_created"
+    assert replies[-1][0] == "om_group_direct_mention"
+    assert "已创建任务" in replies[-1][1]
+
+
+def test_group_context_required_reply_quotes_source_message(handler):
+    replies = []
+    handler.feishu.send_reply_text = lambda message_id, text: replies.append((message_id, text)) or SendResult(ok=True, raw={})
+
+    result = handler.handle_event(
+        feishu_event(
+            "@AI交付助理 接受",
+            message_id="om_group_accept_without_context",
+            mentions=[mention("ou_bot", "AI交付助理")],
+        )
+    )
+
+    assert result["action"] == "task_context_required"
+    assert replies == [("om_group_accept_without_context", "请引用对应任务消息回复，或直接带上任务ID。")]
 
 
 def test_plain_chat_does_not_create_task(handler):
@@ -90,7 +148,7 @@ def test_private_standup_is_saved(handler):
     result = handler.handle_event(event)
 
     assert result["action"] == "standup_saved"
-    standups = handler.store.list_standups("2026-06-18")
+    standups = handler.store.list_standups(date.today().isoformat())
     assert len(standups) == 1
     assert standups[0]["today_plan"] == ["联调前端"]
 
@@ -118,7 +176,7 @@ def test_private_reply_to_standup_prompt_uses_context(handler):
     result = handler.handle_event(event)
 
     assert result["action"] == "standup_saved"
-    standups = handler.store.list_standups("2026-06-18")
+    standups = handler.store.list_standups(date.today().isoformat())
     assert standups[0]["today_plan"]
 
 

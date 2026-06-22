@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional
 from ..config import FeishuConfig
 from ..models import Mention, SourceMessage, utc_now_iso
 
+WORKING_REACTION_EMOJI_TYPE = "OnIt"
+
 
 @dataclass
 class SendResult:
@@ -86,6 +88,11 @@ class FeishuAdapter:
     def send_private_text(self, open_id: str, text: str) -> SendResult:
         return self._send(["--user-id", open_id], text)
 
+    def send_reply_text(self, message_id: str, text: str) -> SendResult:
+        if not message_id:
+            return SendResult(ok=False, raw={}, error="message_id is required for reply")
+        return self._send_reply(message_id, text)
+
     def upload_file(self, file_path: str) -> SendResult:
         if self.dry_run:
             return SendResult(ok=True, raw={"dry_run": True, "file_path": file_path}, url=file_path)
@@ -149,7 +156,30 @@ class FeishuAdapter:
             return SendResult(ok=False, raw={}, error=str(exc))
         return self._result_from_process(proc)
 
-    def add_reaction(self, message_id: str, emoji_type: str = "WIP") -> Optional[str]:
+    def _send_reply(self, message_id: str, text: str) -> SendResult:
+        if self.dry_run:
+            raw = {"dry_run": True, "reply_to": message_id, "text": text}
+            return SendResult(ok=True, raw=raw, chat_id=None)
+        cmd = [
+            self.config.lark_cli_path,
+            "im",
+            "+messages-reply",
+            "--as",
+            "bot",
+            "--message-id",
+            message_id,
+            "--msg-type",
+            "text",
+            "--text",
+            text,
+        ]
+        try:
+            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=60)
+        except Exception as exc:
+            return SendResult(ok=False, raw={}, error=str(exc))
+        return self._result_from_process(proc)
+
+    def add_reaction(self, message_id: str, emoji_type: str = WORKING_REACTION_EMOJI_TYPE) -> Optional[str]:
         if self.dry_run or not message_id:
             return None
         cmd = [
