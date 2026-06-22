@@ -1281,9 +1281,19 @@ class MessageHandler:
 
     def _resolve_reply_context(self, message: SourceMessage) -> Optional[Dict[str, Any]]:
         for message_id in [message.parent_id, message.root_id]:
+            if not message_id:
+                continue
             context = self.store.get_bot_message_context(message_id)
             if context:
                 return context
+            for task in self.store.list_tasks():
+                if task.get("source_message_id") == message_id:
+                    return {
+                        "context_type": "task_thread",
+                        "task_id": task["id"],
+                        "task_title": task["title"],
+                        "metadata": {"tapd_story_id": task.get("tapd_story_id")}
+                    }
         return None
 
     def _contextual_task(
@@ -1318,7 +1328,8 @@ class MessageHandler:
                 TASK_STATUS_OWNER_MARKED_DONE,
             }:
                 candidates.append(task)
-        if len(candidates) == 1:
+        if len(candidates) >= 1:
+            candidates.sort(key=lambda t: t.get("updated_at", ""), reverse=True)
             return candidates[0]
         return None
 
