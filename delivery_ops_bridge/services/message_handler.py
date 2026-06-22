@@ -939,9 +939,9 @@ class MessageHandler:
         if action in {"接受", "拒绝", "需要澄清", "验收通过", "打回"}:
             return self._apply_action(message, source, task_data, action, action)
         if action in {"已完成", "完成了"}:
-            return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", action, None)
+            return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", action, TAPD_STATUS_TESTING)
         if action in {"阻塞", "阻塞了"}:
-            return self._set_task_status(message, source, task_data, TASK_STATUS_BLOCKED, "blocked", action, None)
+            return self._set_task_status(message, source, task_data, TASK_STATUS_BLOCKED, "blocked", action, TAPD_STATUS_BLOCKED)
         self._reply(message, source, "我理解是要更新任务状态，但没有识别到支持的状态动作。")
         return {"handled": True, "action": "ai_clarification", "reason": "unsupported_status_action"}
 
