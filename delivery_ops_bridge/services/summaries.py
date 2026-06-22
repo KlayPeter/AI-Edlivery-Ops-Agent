@@ -37,10 +37,16 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
     all_tasks = [t for t in store.list_tasks() if t.get("status") != "deleted"]
     tasks_by_id = {item.get("id", ""): item for item in all_tasks if item.get("id")}
     group_task_ids = {item.get("id", "") for item in all_tasks if _item_group_id(item, source_messages_by_id) == group_id}
+    def _is_today(sent_at: str) -> bool:
+        s = str(sent_at)
+        if s.isdigit():
+            return datetime.fromtimestamp(int(s) / 1000.0).date().isoformat() == date_text
+        return s.startswith(date_text)
+
     messages = [
         item
         for item in source_messages
-        if str(item.get("sent_at", "")).startswith(date_text) and item.get("chat_id") == group_id
+        if _is_today(item.get("sent_at", "")) and item.get("chat_id") == group_id
     ]
     tasks = [
         _task_summary_item(item, source_messages_by_id)
@@ -74,7 +80,7 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
         and _item_group_id(item, source_messages_by_id) == group_id
     ]
     risks.extend(classified["risks"])
-    highlights = _highlights(tasks, progress_updates, blockers, classified["decisions"], risks, classified["shares"])
+    highlights = _highlights(tasks, progress_updates, blockers, classified["decisions"], risks, classified["helps"], classified["shares"], classified["meetings"])
 
     ai_abstract = None
     if llm:
@@ -102,7 +108,9 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
         blockers=blockers,
         decisions=classified["decisions"],
         risks=risks,
+        helps=classified["helps"],
         shares=classified["shares"],
+        meetings=classified["meetings"],
         created_at=utc_now_iso(),
         ai_abstract=ai_abstract,
     )
@@ -164,14 +172,28 @@ def render_daily_summary(summary: DailySummary) -> str:
             lines.append(f"   - 来源：{_source_text(item)}")
     else:
         lines.append("暂无明显风险。")
-    lines.extend(["", "六、资料分享"])
+    lines.extend(["", "六、求助问题"])
+    if summary.helps:
+        for idx, item in enumerate(summary.helps, 1):
+            lines.append(f"{idx}. {item.get('title', '')}")
+            lines.append(f"   - 来源：{_source_text(item)}")
+    else:
+        lines.append("暂无求助问题。")
+    lines.extend(["", "七、资料分享"])
     if summary.shares:
         for idx, item in enumerate(summary.shares, 1):
             lines.append(f"{idx}. {item.get('title', '')}")
             lines.append(f"   - 来源：{_source_text(item)}")
     else:
         lines.append("暂无资料分享。")
-    lines.extend(["", "七、需要管理者关注"])
+    lines.extend(["", "八、会议/通知"])
+    if summary.meetings:
+        for idx, item in enumerate(summary.meetings, 1):
+            lines.append(f"{idx}. {item.get('title', '')}")
+            lines.append(f"   - 来源：{_source_text(item)}")
+    else:
+        lines.append("暂无会议/通知。")
+    lines.extend(["", "九、需要管理者关注"])
     attention = summary.blockers + summary.risks
     if attention:
         for idx, item in enumerate(attention[:5], 1):
@@ -187,7 +209,9 @@ def _highlights(
     blockers: List[Dict[str, Any]],
     decisions: List[Dict[str, Any]],
     risks: List[Dict[str, Any]],
+    helps: List[Dict[str, Any]],
     shares: List[Dict[str, Any]],
+    meetings: List[Dict[str, Any]],
 ) -> List[str]:
     values: List[str] = []
     if tasks:
@@ -200,8 +224,12 @@ def _highlights(
         values.append(f"今日沉淀 {len(decisions)} 条决策结论。")
     if risks:
         values.append(f"{len(risks)} 个任务存在阻塞或超期风险。")
+    if helps:
+        values.append(f"今日收到 {len(helps)} 个求助问题。")
     if shares:
         values.append(f"今日沉淀 {len(shares)} 条资料分享。")
+    if meetings:
+        values.append(f"今日发布 {len(meetings)} 条会议或重要通知。")
     return values[:5]
 
 
@@ -248,10 +276,10 @@ def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter) 
     }
     system = (
         "你是研发交付群聊日报分类器。只输出 JSON，不要 Markdown。"
-        "从每条消息中识别 progress、blocker、decision、risk、share，可一条消息产生多个 items。"
-        "输出格式：{\"items\":[{\"message_id\":\"\",\"type\":\"progress|blocker|decision|risk|share\","
+        "从每条消息中识别 progress(进度更新)、blocker(阻塞事项)、decision(决策结论)、risk(风险提示)、help(求助问题)、share(资料分享)、meeting(会议/通知)，可一条消息产生多个 items。"
+        "输出格式：{\"items\":[{\"message_id\":\"\",\"type\":\"progress|blocker|decision|risk|help|share|meeting\","
         "\"title\":\"简短中文标题\",\"related_users\":[\"姓名\"],\"risk_level\":\"low|medium|high|\",\"confidence\":0.0}]}。"
-        "不要编造消息 ID；没有价值的信息不要输出 item。"
+        "不要编造消息 ID；没有价值的闲聊/噪音不要输出 item。"
     )
     result = llm.chat(system, json.dumps(payload, ensure_ascii=False))
     if not result.ok or not result.content.strip():
@@ -394,7 +422,7 @@ def _compact_title(text: str) -> str:
 
 
 def _empty_classification() -> Dict[str, List[Dict[str, Any]]]:
-    return {"progress_updates": [], "blockers": [], "decisions": [], "risks": [], "shares": []}
+    return {"progress_updates": [], "blockers": [], "decisions": [], "risks": [], "helps": [], "shares": [], "meetings": []}
 
 
 def _message_trace(message: Dict[str, Any], ai_result: Dict[str, Any], confidence: float) -> Dict[str, Any]:
@@ -453,7 +481,7 @@ def _item_group_id(item: Dict[str, Any], messages_by_id: Dict[str, Dict[str, Any
 
 def _normalize_summary_type(value: Any) -> str:
     item_type = _string(value)
-    return item_type if item_type in {"progress", "blocker", "decision", "risk", "share"} else ""
+    return item_type if item_type in {"progress", "blocker", "decision", "risk", "help", "share", "meeting"} else ""
 
 
 def _summary_bucket(item_type: str) -> str:
@@ -462,7 +490,9 @@ def _summary_bucket(item_type: str) -> str:
         "blocker": "blockers",
         "decision": "decisions",
         "risk": "risks",
+        "help": "helps",
         "share": "shares",
+        "meeting": "meetings",
     }[item_type]
 
 

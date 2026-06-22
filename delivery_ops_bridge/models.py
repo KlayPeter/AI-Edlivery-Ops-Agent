@@ -147,7 +147,9 @@ class DailySummary:
     blockers: List[Dict[str, Any]]
     decisions: List[Dict[str, Any]]
     risks: List[Dict[str, Any]]
+    helps: List[Dict[str, Any]]
     shares: List[Dict[str, Any]]
+    meetings: List[Dict[str, Any]]
     created_at: str
     ai_abstract: Optional[str] = None
 
