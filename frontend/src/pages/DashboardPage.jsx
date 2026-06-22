@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Layout, Menu, Typography, Spin, Alert, Empty, Drawer } from 'antd';
+import { Layout, Menu, Spin, Alert, Empty, Drawer } from 'antd';
 import { api } from '../api';
 
-const { Sider, Content } = Layout;
-const { Title } = Typography;
+const { Content } = Layout;
 
 const DashboardPage = () => {
   const [dashboards, setDashboards] = useState([]);

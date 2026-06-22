@@ -3,7 +3,7 @@ import { Typography, Card, Button, Row, Col, message } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
 import { api } from '../api';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 
 const JOBS = [
   { id: 'standup-push', name: '推送站会模板', desc: '向所有成员私聊发送每日站会模板' },

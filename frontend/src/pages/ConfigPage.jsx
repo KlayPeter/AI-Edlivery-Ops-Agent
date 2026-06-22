@@ -27,6 +27,9 @@ const ConfigPage = () => {
       }
       // Ensure missing enabled flags default to true for UI display
       const config = { ...data, schedule: { ...(data.schedule || {}) } };
+      if (config.schedule.task_reminder_frequency_hours === undefined) {
+        config.schedule.task_reminder_frequency_hours = 24;
+      }
       JOBS.forEach(job => {
         if (config.schedule[`${job.id}_enabled`] === undefined) {
           config.schedule[`${job.id}_enabled`] = true;
@@ -104,6 +107,13 @@ const ConfigPage = () => {
                   </Form.Item>
                 </Col>
               </Row>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['feishu', 'send_retry_count']} label="消息发送重试次数">
+                    <InputNumber min={0} max={5} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
             </Card>
 
             <Card title="TAPD 配置" style={{ marginBottom: 20 }}>
@@ -143,6 +153,13 @@ const ConfigPage = () => {
                 <Col span={12}>
                   <Form.Item name={['ai', 'temperature']} label="温度 (Temperature)">
                     <InputNumber step={0.1} min={0} max={2} style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['ai', 'retry_count']} label="AI 调用重试次数">
+                    <InputNumber min={0} max={5} style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
               </Row>
@@ -202,6 +219,20 @@ const ConfigPage = () => {
                   </Col>
                 </Row>
               ))}
+              <Row gutter={24} style={{ alignItems: 'center', marginTop: 12 }}>
+                <Col span={8}>
+                  <strong>任务提醒频率</strong>
+                </Col>
+                <Col span={10}>
+                  <Form.Item
+                    name={['schedule', 'task_reminder_frequency_hours']}
+                    style={{ margin: 0 }}
+                    rules={[{ type: 'number', min: 1, message: '至少 1 小时' }]}
+                  >
+                    <InputNumber min={1} max={168} addonAfter="小时" style={{ width: '100%' }} />
+                  </Form.Item>
+                </Col>
+              </Row>
             </Card>
           </Col>
         </Row>
