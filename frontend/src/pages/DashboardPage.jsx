@@ -62,10 +62,10 @@ const DashboardPage = () => {
           {error ? (
             <Alert message="看板加载失败" description={error} type="error" showIcon />
           ) : selectedDashboard ? (
-            <div style={{ flex: 1, border: '1px solid #d9d9d9', borderRadius: '8px', overflow: 'hidden', minHeight: '400px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ flex: 1, border: '1px solid #d9d9d9', borderRadius: '8px', overflow: 'hidden', minHeight: '400px', position: 'relative' }}>
               <iframe
                 src={api.getDashboardUrl(selectedDashboard)}
-                style={{ flex: 1, width: '100%', border: 'none', display: 'block' }}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none', display: 'block' }}
                 title="Dashboard"
               />
             </div>
