@@ -68,18 +68,80 @@ class ScheduledJobs:
         standups = self.store.list_standups(day.isoformat())
         submitted = {item.get("open_id") for item in standups}
         missing = [member.name for member in self.config.members if member.is_active and member.open_id not in submitted]
-        lines = [f"【今日站会汇总｜{day.isoformat()}】", "", "一、今日计划"]
-        if standups:
-            for item in standups:
-                lines.append(f"- {item.get('user_name')}：{'；'.join(item.get('today_plan', [])) or '未填写'}")
-        else:
-            lines.append("暂无站会提交。")
-        blockers = [blocker for item in standups for blocker in item.get("blockers", [])]
-        lines.extend(["", "二、阻塞/需要帮助"])
-        lines.extend([f"{idx}. {item}" for idx, item in enumerate(blockers, 1)] or ["暂无明确阻塞。"])
-        lines.extend(["", "三、未提交情况", f"- 未提交人数：{len(missing)}"])
+        
+        if not standups:
+            missing_text = f"七、未提交情况\n- 未提交人数：{len(missing)}"
+            if self.config.runtime.public_missing_standups and missing:
+                missing_text += f"\n- 未提交成员：{'、'.join(missing)}"
+            self.feishu.send_group_text(f"【今日站会汇总｜{day.isoformat()}】\n\n暂无站会提交。\n\n{missing_text}", self.config.feishu.group_chat_id)
+            return {"submitted": 0, "missing": len(missing)}
+
+        missing_text = f"- 未提交人数：{len(missing)}"
         if self.config.runtime.public_missing_standups and missing:
-            lines.append(f"- 未提交成员：{'、'.join(missing)}")
+            missing_text += f"\n- 未提交成员：{'、'.join(missing)}"
+
+        if self.llm:
+            payload = json.dumps([
+                {
+                    "name": s.get("user_name"),
+                    "yesterday_done": s.get("yesterday_done", []),
+                    "today_plan": s.get("today_plan", []),
+                    "blockers": s.get("blockers", []),
+                    "risks": s.get("risks", []),
+                    "decisions_needed": s.get("decisions_needed", [])
+                }
+                for s in standups
+            ], ensure_ascii=False)
+            prompt = (
+                f"你是研发团队助理，请根据以下 JSON 格式的成员站会提交记录，生成今日站会汇总报告。\n"
+                f"请严格按照以下格式输出，如果没有相关内容，请在该模块下写“暂无”：\n\n"
+                f"【今日站会汇总｜{day.isoformat()}】\n\n"
+                f"一、团队今日重点\n"
+                f"1. xxx\n\n"
+                f"二、昨日完成\n"
+                f"- 张三：xxx\n\n"
+                f"三、今日计划\n"
+                f"- 张三：xxx\n\n"
+                f"四、阻塞/需要帮助\n"
+                f"1. xxx\n"
+                f"   - 相关人：xxx\n"
+                f"   - 建议动作：xxx\n\n"
+                f"五、风险/可能延期\n"
+                f"1. xxx\n"
+                f"   - 风险等级：高 / 中 / 低\n"
+                f"   - 建议动作：xxx\n\n"
+                f"六、需要决策\n"
+                f"1. xxx\n"
+                f"   - 建议决策人：xxx\n\n"
+                f"七、未提交情况\n"
+                f"{missing_text}\n\n"
+                f"请保持格式完全一致，不要输出多余的Markdown代码块符号（如```）。"
+            )
+            res = self.llm.chat(prompt, payload)
+            if res.ok and res.content.strip():
+                text = res.content.strip()
+                if text.startswith("```"):
+                    lines = text.split("\n")
+                    if len(lines) > 2:
+                        text = "\n".join(lines[1:-1]).strip()
+                self.feishu.send_group_text(text, self.config.feishu.group_chat_id)
+                return {"submitted": len(standups), "missing": len(missing)}
+
+        # Fallback
+        lines = [f"【今日站会汇总｜{day.isoformat()}】", "", "一、团队今日重点", "1. 暂无", "", "二、昨日完成"]
+        for item in standups:
+            lines.append(f"- {item.get('user_name')}：{'；'.join(item.get('yesterday_done', [])) or '暂无'}")
+        lines.extend(["", "三、今日计划"])
+        for item in standups:
+            lines.append(f"- {item.get('user_name')}：{'；'.join(item.get('today_plan', [])) or '暂无'}")
+        lines.extend(["", "四、阻塞/需要帮助"])
+        blockers = [blocker for item in standups for blocker in item.get("blockers", [])]
+        if blockers:
+            for idx, item in enumerate(blockers, 1):
+                lines.extend([f"{idx}. {item}", "   - 相关人：待确认", "   - 建议动作：待确认"])
+        else:
+            lines.append("暂无。")
+        lines.extend(["", "五、风险/可能延期", "暂无。", "", "六、需要决策", "暂无。", "", "七、未提交情况", missing_text])
         self.feishu.send_group_text("\n".join(lines), self.config.feishu.group_chat_id)
         return {"submitted": len(standups), "missing": len(missing)}
 
