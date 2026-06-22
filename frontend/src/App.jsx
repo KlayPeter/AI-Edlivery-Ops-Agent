@@ -17,7 +17,7 @@ function AppContent() {
     {
       key: '/',
       icon: <DashboardOutlined />,
-      label: '数据看板',
+      label: '进度看板',
     },
     {
       key: '/logs',
