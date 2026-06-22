@@ -177,15 +177,18 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                     if dry_run:
                         cmd.append("--dry-run")
                     cmd.extend(["job", job_name])
-                    subprocess.Popen(
+                    process = subprocess.run(
                         cmd,
                         cwd=str(self.bridge.config.root_path),
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        close_fds=True,
+                        capture_output=True,
+                        text=True,
                     )
-                    self.bridge.store.append_audit_log("job_triggered", {"job_name": job_name, "dry_run": dry_run})
-                    self._json_response(200, {"ok": True, "message": f"任务 {job_name} 已在后台启动"})
+                    self.bridge.store.append_audit_log("job_completed", {"job_name": job_name, "dry_run": dry_run, "returncode": process.returncode})
+                    
+                    if process.returncode == 0:
+                        self._json_response(200, {"ok": True, "message": f"任务 {job_name} 运行完成"})
+                    else:
+                        self._json_response(500, {"error": f"任务 {job_name} 执行失败", "stderr": process.stderr})
                 except Exception as e:
                     self._json_response(500, {"error": str(e)})
             else:

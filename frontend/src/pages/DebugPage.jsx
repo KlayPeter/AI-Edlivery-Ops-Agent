@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Typography, Card, Button, Row, Col, message, Switch, Space } from 'antd';
-import { PlayCircleOutlined, BugOutlined } from '@ant-design/icons';
+import { Typography, Card, Button, Row, Col, message } from 'antd';
+import { PlayCircleOutlined } from '@ant-design/icons';
 import { api } from '../api';
 
 const { Title, Text } = Typography;
@@ -16,15 +16,13 @@ const JOBS = [
 
 const DebugPage = () => {
   const [runningJob, setRunningJob] = useState(null);
-  const [dryRunGlobal, setDryRunGlobal] = useState(true);
 
-  const handleRun = async (jobId, forceDryRun = null) => {
+  const handleRun = async (jobId) => {
     setRunningJob(jobId);
-    const isDryRun = forceDryRun !== null ? forceDryRun : dryRunGlobal;
     try {
-      const res = await api.triggerJob(jobId, isDryRun);
+      const res = await api.triggerJob(jobId, false);
       if (res.ok) {
-        message.success(res.message || `任务 ${jobId} 已启动`);
+        message.success(res.message || `任务 ${jobId} 运行完成`);
       } else {
         message.warning(`任务可能未正常启动：${JSON.stringify(res)}`);
       }
@@ -39,15 +37,6 @@ const DebugPage = () => {
     <div style={{ padding: '24px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0 }}>流程调试面板</Title>
-        <Space>
-          <Text strong>默认执行模式：</Text>
-          <Switch 
-            checkedChildren="模拟运行 (Dry-run)" 
-            unCheckedChildren="真实运行 (发飞书)" 
-            checked={dryRunGlobal}
-            onChange={setDryRunGlobal}
-          />
-        </Space>
       </div>
 
       <Row gutter={[24, 24]}>
@@ -57,21 +46,12 @@ const DebugPage = () => {
               <p style={{ height: 44, color: '#666' }}>{job.desc}</p>
               <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
                 <Button 
-                  type={dryRunGlobal ? "primary" : "default"} 
-                  icon={<BugOutlined />} 
-                  loading={runningJob === job.id} 
-                  onClick={() => handleRun(job.id, true)}
-                >
-                  模拟运行
-                </Button>
-                <Button 
-                  type={!dryRunGlobal ? "primary" : "default"} 
-                  danger={!dryRunGlobal}
+                  type="primary" 
                   icon={<PlayCircleOutlined />} 
                   loading={runningJob === job.id} 
-                  onClick={() => handleRun(job.id, false)}
+                  onClick={() => handleRun(job.id)}
                 >
-                  真实运行
+                  运行
                 </Button>
               </div>
             </Card>
