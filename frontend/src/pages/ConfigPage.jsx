@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber, Switch } from 'antd';
+import { useEffect, useState } from 'react';
+import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber, Switch, Alert } from 'antd';
 import { api } from '../api';
 
 const JOBS = [
@@ -16,25 +16,35 @@ const ConfigPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [originalConfig, setOriginalConfig] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
     api.fetchConfig().then(data => {
+      if (cancelled) return;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('配置格式不正确');
+      }
       // Ensure missing enabled flags default to true for UI display
-      const schedule = { ...data.schedule };
+      const config = { ...data, schedule: { ...(data.schedule || {}) } };
       JOBS.forEach(job => {
-        if (schedule[`${job.id}_enabled`] === undefined) {
-          schedule[`${job.id}_enabled`] = true;
+        if (config.schedule[`${job.id}_enabled`] === undefined) {
+          config.schedule[`${job.id}_enabled`] = true;
         }
       });
-      data.schedule = schedule;
 
-      setOriginalConfig(data);
-      form.setFieldsValue(data);
+      setOriginalConfig(config);
+      form.setFieldsValue(config);
       setLoading(false);
     }).catch(err => {
-      message.error('加载配置失败：' + err.message);
+      if (cancelled) return;
+      setLoadError(err.message || '请求失败');
+      message.error('加载配置失败：' + (err.message || '请求失败'));
       setLoading(false);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [form]);
 
   const onFinish = async (values) => {
@@ -59,10 +69,12 @@ const ConfigPage = () => {
     <div style={{ padding: '24px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h2 style={{ margin: 0 }}>系统配置</h2>
-        <Button type="primary" onClick={() => form.submit()} loading={saving} size="large">
+        <Button type="primary" onClick={() => form.submit()} loading={saving} size="large" disabled={!originalConfig}>
           保存配置
         </Button>
       </div>
+
+      {loadError && <Alert message="配置加载失败" description={loadError} type="error" showIcon style={{ marginBottom: 16 }} />}
 
       <Form form={form} layout="vertical" onFinish={onFinish}>
         <Row gutter={24}>
@@ -112,9 +124,9 @@ const ConfigPage = () => {
             <Card title="AI 模型配置" style={{ marginBottom: 20 }}>
               <Row gutter={24}>
                 <Col span={12}>
-                  <Form.Item name={['ai', 'api_base']} label="API 地址 (Base URL)">
-                    <Input />
-                  </Form.Item>
+                    <Form.Item name={['ai', 'api_base']} label="API 地址 (Base URL)" rules={[{ type: 'url', message: '请输入有效 URL' }]}>
+                      <Input />
+                    </Form.Item>
                 </Col>
                 <Col span={12}>
                   <Form.Item name={['ai', 'api_key']} label="API 密钥 (API Key)">
@@ -146,7 +158,7 @@ const ConfigPage = () => {
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name={['runtime', 'public_base_url']} label="公共访问 URL 前缀">
+                  <Form.Item name={['runtime', 'public_base_url']} label="公共访问 URL 前缀" rules={[{ type: 'url', warningOnly: true, message: '建议填写完整 URL' }]}>
                     <Input placeholder="例如: https://my-dashboard.com" />
                   </Form.Item>
                 </Col>
@@ -175,7 +187,11 @@ const ConfigPage = () => {
                     <strong>{job.name}</strong>
                   </Col>
                   <Col span={10}>
-                    <Form.Item name={['schedule', job.id]} style={{ margin: 0 }}>
+                    <Form.Item
+                      name={['schedule', job.id]}
+                      style={{ margin: 0 }}
+                      rules={[{ pattern: /^([01]\d|2[0-3]):[0-5]\d$/, message: '时间格式应为 HH:MM' }]}
+                    >
                       <Input placeholder="HH:MM" />
                     </Form.Item>
                   </Col>

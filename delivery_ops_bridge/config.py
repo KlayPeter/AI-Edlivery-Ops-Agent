@@ -85,17 +85,30 @@ def _env_override(value: str, env_name: str) -> str:
     return os.environ.get(env_name, value)
 
 
-def load_config(path: str | None = None) -> AppConfig:
-    config_path = path or os.environ.get("DELIVERY_OPS_CONFIG", "config/config.example.json")
+def resolve_config_path(path: str | None = None, default: str = "config/config.example.json") -> Path:
+    config_path = path or os.environ.get("DELIVERY_OPS_CONFIG", default)
     raw_path = Path(config_path).expanduser()
     if not raw_path.is_absolute():
         raw_path = Path.cwd() / raw_path
+    return raw_path.resolve()
+
+
+def load_config(path: str | None = None) -> AppConfig:
+    raw_path = resolve_config_path(path)
     with raw_path.open("r", encoding="utf-8") as fp:
         raw: Dict[str, Any] = json.load(fp)
+    return build_config(raw, raw_path)
 
+
+def build_config(raw: Dict[str, Any], raw_path: Path | None = None) -> AppConfig:
+    if not isinstance(raw, dict):
+        raise ValueError("配置文件顶层必须是 JSON object")
     project = ProjectConfig(**raw.get("project", {}))
     if project.root == ".":
-        project.root = str(raw_path.parent.parent if raw_path.parent.name == "config" else Path.cwd())
+        if raw_path is None:
+            project.root = str(Path.cwd())
+        else:
+            project.root = str(raw_path.parent.parent if raw_path.parent.name == "config" else Path.cwd())
 
     feishu_raw = raw.get("feishu", {})
     feishu = FeishuConfig(
@@ -138,3 +151,17 @@ def load_config(path: str | None = None) -> AppConfig:
         members=members,
         schedule=raw.get("schedule", {}),
     )
+
+
+def write_config(path: Path, payload: Dict[str, Any]) -> None:
+    """Validate and atomically persist a config payload."""
+    try:
+        build_config(payload, path)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fp:
+        json.dump(payload, fp, ensure_ascii=False, indent=2)
+        fp.write("\n")
+    os.replace(tmp, path)

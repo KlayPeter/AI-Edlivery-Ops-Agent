@@ -1,15 +1,55 @@
-import axios from 'axios';
+import axios from "axios";
 
-// The backend runs on port 8090 locally.
-const API_BASE = 'http://127.0.0.1:8090/api';
+const API_BASE = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:8090/api").replace(/\/$/, "");
+
+const client = axios.create({
+  baseURL: API_BASE,
+  timeout: 15000,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+const normalizeError = (error) => {
+  const payload = error.response?.data;
+  const serverMessage = payload?.message || payload?.error;
+  const message =
+    serverMessage ||
+    (error.code === "ECONNABORTED" ? "请求超时，请确认后端服务是否正常" : error.message) ||
+    "请求失败";
+
+  const normalized = new Error(message);
+  normalized.status = error.response?.status;
+  normalized.payload = payload;
+  return normalized;
+};
+
+const request = async (promise) => {
+  try {
+    const response = await promise;
+    return response.data;
+  } catch (error) {
+    throw normalizeError(error);
+  }
+};
+
+const safeArray = (value) => (Array.isArray(value) ? value : []);
 
 export const api = {
-  fetchConfig: () => axios.get(`${API_BASE}/config`).then(res => res.data),
-  saveConfig: (data) => axios.post(`${API_BASE}/config`, data).then(res => res.data),
-  fetchDashboards: () => axios.get(`${API_BASE}/dashboards`).then(res => res.data.dashboards),
-  getDashboardUrl: (filename) => `${API_BASE}/dashboards/${filename}`,
-  fetchLogs: () => axios.get(`${API_BASE}/logs`).then(res => res.data.logs),
-  fetchContexts: () => axios.get(`${API_BASE}/contexts`).then(res => res.data.contexts),
-  triggerJob: (jobName, dryRun = true) => 
-    axios.post(`${API_BASE}/jobs/${jobName}`, { dryRun }).then(res => res.data),
+  fetchConfig: () => request(client.get("/config")),
+  saveConfig: (data) => request(client.post("/config", data)),
+  fetchDashboards: async () => {
+    const data = await request(client.get("/dashboards"));
+    return safeArray(data.dashboards);
+  },
+  getDashboardUrl: (filename) => `${API_BASE}/dashboards/${encodeURIComponent(filename)}`,
+  fetchLogs: async () => {
+    const data = await request(client.get("/logs"));
+    return safeArray(data.logs);
+  },
+  fetchContexts: async () => {
+    const data = await request(client.get("/contexts"));
+    return safeArray(data.contexts);
+  },
+  triggerJob: (jobName, dryRun = true) => request(client.post(`/jobs/${encodeURIComponent(jobName)}`, { dryRun })),
 };

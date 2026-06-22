@@ -1,5 +1,4 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, ConfigProvider, theme } from 'antd';
 import { SettingOutlined, DashboardOutlined, CodeOutlined, UnorderedListOutlined, DatabaseOutlined } from '@ant-design/icons';
 import ConfigPage from './pages/ConfigPage';

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Layout, Menu, Typography, Spin, Alert, Empty } from 'antd';
 import { api } from '../api';
 
@@ -9,22 +9,32 @@ const DashboardPage = () => {
   const [dashboards, setDashboards] = useState([]);
   const [selectedDashboard, setSelectedDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
       try {
         const dashboardsData = await api.fetchDashboards();
+        if (cancelled) return;
         setDashboards(dashboardsData);
         if (dashboardsData.length > 0) {
           setSelectedDashboard(dashboardsData[0]);
         }
       } catch (e) {
-        console.error('加载数据失败', e);
+        if (!cancelled) {
+          setError(e.message || '加载看板失败');
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
     fetchData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (loading) {
@@ -49,7 +59,9 @@ const DashboardPage = () => {
       
       <Content style={{ padding: '24px', overflow: 'auto', height: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {selectedDashboard ? (
+          {error ? (
+            <Alert message="看板加载失败" description={error} type="error" showIcon />
+          ) : selectedDashboard ? (
             <div style={{ flex: 1, border: '1px solid #d9d9d9', borderRadius: '8px', overflow: 'hidden', minHeight: '400px' }}>
               <iframe
                 src={api.getDashboardUrl(selectedDashboard)}

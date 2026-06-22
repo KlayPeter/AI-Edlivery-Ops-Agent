@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Table, Tag, Typography, message, Tooltip, Space, Tabs } from 'antd';
+import { useEffect, useState } from 'react';
+import { Table, Tag, Typography, message, Tooltip, Space, Tabs, Alert } from 'antd';
 import { api } from '../api';
 
 const { Title, Text } = Typography;
@@ -26,19 +26,39 @@ const getTypeName = (type) => {
   }
 };
 
+const shortId = (value) => {
+  if (!value) return '-';
+  return value.split('_')[1]?.substring(0, 8) || value.substring(0, 8);
+};
+
+const formatDate = (value) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+};
+
 const ContextsPage = () => {
   const [contexts, setContexts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
+  const [error, setError] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
     api.fetchContexts().then(data => {
+      if (cancelled) return;
       setContexts(data);
       setLoading(false);
     }).catch(err => {
-      message.error('加载上下文失败：' + err.message);
+      if (cancelled) return;
+      setError(err.message || '加载上下文失败');
+      message.error('加载上下文失败：' + (err.message || '请求失败'));
       setLoading(false);
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const columns = [
@@ -47,7 +67,7 @@ const ContextsPage = () => {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (text) => <Text type="secondary">{new Date(text).toLocaleString()}</Text>
+      render: (text) => <Text type="secondary">{formatDate(text)}</Text>
     },
     {
       title: '上下文类型',
@@ -93,10 +113,10 @@ const ContextsPage = () => {
           return <Tag color="blue">私聊: {record.target_name}</Tag>;
         }
         if (record.target_open_id) {
-          return <Tag color="blue">私聊: {record.target_open_id.split('_')[1]?.substring(0, 8)}...</Tag>;
+          return <Tag color="blue">私聊: {shortId(record.target_open_id)}...</Tag>;
         }
         if (record.chat_id) {
-          return <Tag color="orange">群聊: {record.chat_id.split('_')[1]?.substring(0, 8)}...</Tag>;
+          return <Tag color="orange">群聊: {shortId(record.chat_id)}...</Tag>;
         }
         return '-';
       }
@@ -108,7 +128,7 @@ const ContextsPage = () => {
       width: 180,
       render: (text) => (
         <Tooltip title={text}>
-          <Text code>{text.split('_')[1]?.substring(0, 8)}...</Text>
+          <Text code>{shortId(text)}...</Text>
         </Tooltip>
       )
     }
@@ -137,6 +157,8 @@ const ContextsPage = () => {
       </div>
       
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
+
+      {error && <Alert message="上下文加载失败" description={error} type="error" showIcon style={{ marginBottom: 16 }} />}
 
       <Table 
         columns={columns} 

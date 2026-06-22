@@ -1,6 +1,13 @@
 # Agent 工作规约
 
 为了保证代码库的质量与可维护性，AI Agent 在操作本项目时需严格遵循以下规范：
+Before reading files:
+
+1. Use CodeGraph MCP first.
+2. Use codegraph_explore to understand architecture.
+3. Use codegraph_impact before modifications.
+4. Avoid scanning the repository with grep.
+5. Read only files returned by CodeGraph.
 
 1. **每次修改必提交 (Commit)**
    所有代码的修改（包括新增功能、修复 Bug、重构等）在完成一个独立节点后，都必须进行对应并有意义的 `git commit`。
