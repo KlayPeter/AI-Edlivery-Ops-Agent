@@ -36,7 +36,9 @@ class DashboardService:
     def generate(self, day: date | None = None, highlights: List[str] | None = None) -> DashboardArtifact:
         day = day or date.today()
         date_text = day.isoformat()
-        tasks = self._sort_tasks(self.store.list_tasks())
+        all_tasks = self.store.list_tasks()
+        active_tasks = [t for t in all_tasks if t.get("status") != "cancelled" and not t.get("is_draft")]
+        tasks = self._sort_tasks(active_tasks)
         standups = self.store.list_standups(date_text)
         updates = self.store.list_task_updates()
         stats = self._build_stats(tasks, standups, date_text)
