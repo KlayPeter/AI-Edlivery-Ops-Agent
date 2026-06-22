@@ -101,6 +101,12 @@ class MessageHandler:
     def _handle_group_message(self, message: SourceMessage, reply_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if reply_context is None:
             reply_context = self._resolve_reply_context(message)
+            
+        if reply_context and reply_context.get("context_type") == "missing_task_field":
+            original_text = reply_context.get("metadata", {}).get("original_text", "")
+            if original_text:
+                message.text = f"{original_text} {message.text}"
+
         if "生成今日进度看板" in message.text or "生成看板" in message.text or "进度看板" in message.text:
             artifact = self.dashboard.generate()
             publish = self.feishu.publish_file(artifact.html_path)
@@ -172,6 +178,12 @@ class MessageHandler:
             self.store.append_audit_log("unknown_user", {"open_id": message.sender_open_id, "chat_id": message.chat_id})
             return {"handled": True, "action": "unknown_user"}
         reply_context = self._resolve_reply_context(message)
+        
+        if reply_context and reply_context.get("context_type") == "missing_task_field":
+            original_text = reply_context.get("metadata", {}).get("original_text", "")
+            if original_text:
+                message.text = f"{original_text} {message.text}"
+
         if self._should_treat_as_standup(message, reply_context):
             standup = parse_standup(message.sender_open_id, message.sender_name, message.text, message.id)
             standup.ai_result = {"type": "standup", "parser": "structured_or_natural_language"}
@@ -209,7 +221,17 @@ class MessageHandler:
         text = prompts.get(reason)
         if not text:
             return None
-        self._reply(message, source, text)
+        res = self._reply(message, source, text)
+        if res and res.message_id:
+            self.store.save_bot_message_context(
+                BotMessageContext(
+                    message_id=res.message_id,
+                    context_type="missing_task_field",
+                    created_at=utc_now_iso(),
+                    chat_id=message.chat_id,
+                    metadata={"original_text": message.text}
+                )
+            )
         self.store.append_audit_log("task_field_missing", {"message_id": message.id, "reason": reason})
         return {"handled": True, "action": "task_field_missing", "reason": reason}
 
@@ -1126,11 +1148,11 @@ class MessageHandler:
             "clarification": intent.clarification,
         }
 
-    def _reply(self, message: SourceMessage, source: str, text: str) -> None:
+    def _reply(self, message: SourceMessage, source: str, text: str) -> Any:
         if source == "group":
-            self.feishu.send_reply_text(message.id, text)
+            return self.feishu.send_reply_text(message.id, text)
         else:
-            self.feishu.send_private_text(message.sender_open_id, text)
+            return self.feishu.send_private_text(message.sender_open_id, text)
 
     def _notify_source_group(self, task: Task, text: str, context_type: str = "task_status_notice") -> None:
         if not task.source_message_id:
