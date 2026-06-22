@@ -16,6 +16,18 @@ DECISION_HINTS = ("决定", "决策", "结论", "确认", "拍板", "定为")
 RISK_HINTS = ("风险", "延期", "来不及", "不稳定", "影响", "超期")
 SHARE_HINTS = ("分享", "文档", "链接", "资料", "http://", "https://")
 
+STATUS_MAP = {
+    "pending_primary_owner": "待主负责人处理",
+    "pending_confirmation": "待确认",
+    "confirmed": "已确认",
+    "in_progress": "进行中",
+    "blocked": "已阻塞",
+    "owner_marked_done": "负责人已标记完成",
+    "accepted": "已验收",
+    "cancelled": "已取消",
+    "overdue": "已超期",
+}
+
 
 def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None, llm: LLMAdapter | None = None) -> DailySummary:
     day = day or date.today()
@@ -50,6 +62,23 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
     ]
     risks.extend(classified["risks"])
     highlights = _highlights(tasks, progress_updates, blockers, classified["decisions"], risks, classified["shares"])
+
+    ai_abstract = None
+    if llm:
+        prompt = (
+            "你是研发团队的助理，请根据以下今日统计数据，写一段 50 字左右的精炼总结，"
+            "指出今日主要推进了什么，有多少风险/阻塞，语气要专业简练。\n"
+            f"任务数：{len(tasks)}，进度数：{len(progress_updates)}，"
+            f"阻塞数：{len(blockers)}，决策数：{len(classified['decisions'])}，"
+            f"风险数：{len(risks)}"
+        )
+        try:
+            res = llm.chat(prompt, "")
+            if res.ok and res.content.strip():
+                ai_abstract = res.content.strip()
+        except Exception:
+            pass
+
     return DailySummary(
         id=f"summary-{date_text}",
         group_id=group_id,
@@ -62,20 +91,24 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
         risks=risks,
         shares=classified["shares"],
         created_at=utc_now_iso(),
+        ai_abstract=ai_abstract,
     )
 
 
 def render_daily_summary(summary: DailySummary) -> str:
     if not any([summary.highlights, summary.tasks, summary.progress_updates, summary.blockers, summary.decisions, summary.risks, summary.shares]):
         return "今日群内无可总结的有效工作信息。"
-    lines = [f"【今日研发群聊总结｜{summary.date}】", "", "一、今日重点"]
+    lines = [f"【今日研发群聊总结｜{summary.date}】", ""]
+    if summary.ai_abstract:
+        lines.extend(["🤖 AI 总结：", summary.ai_abstract, ""])
+    lines.extend(["一、今日重点"])
     lines.extend(f"{idx}. {item}" for idx, item in enumerate(summary.highlights or ["暂无重点"], 1))
     lines.extend(["", "二、任务与进度"])
     if summary.tasks:
         for idx, task in enumerate(summary.tasks, 1):
             lines.append(f"{idx}. {task.get('title', '')}")
             lines.append(f"   - 负责人：{task.get('primary_owner_name', '')}")
-            lines.append(f"   - 当前状态：{task.get('status', '')}")
+            lines.append(f"   - 当前状态：{STATUS_MAP.get(task.get('status', ''), task.get('status', ''))}")
             lines.append(f"   - 来源：{_source_text(task)}")
     elif summary.progress_updates:
         for idx, item in enumerate(summary.progress_updates, 1):
@@ -100,7 +133,7 @@ def render_daily_summary(summary: DailySummary) -> str:
     lines.extend(["", "五、风险提示"])
     if summary.risks:
         for idx, item in enumerate(summary.risks, 1):
-            status = f"，当前状态：{item.get('status', '')}" if item.get("status") else ""
+            status = f"，当前状态：{STATUS_MAP.get(item.get('status', ''), item.get('status', ''))}" if item.get("status") else ""
             lines.append(f"{idx}. {item.get('title', '')}{status}")
             lines.append(f"   - 来源：{_source_text(item)}")
     else:
@@ -301,8 +334,11 @@ def _risk_summary_item(task: Dict[str, Any], messages_by_id: Dict[str, Dict[str,
 
 
 def _source_text(item: Dict[str, Any]) -> str:
+    text = item.get("raw_text", "").strip().replace("\n", " ")
+    if text:
+        return text[:30] + ("..." if len(text) > 30 else "")
     ids = [value for value in item.get("source_message_ids", []) if value]
-    return "、".join(ids) if ids else "结构化记录"
+    return "消息 ID: " + "、".join(ids) if ids else "结构化记录"
 
 
 def _has_any(text: str, keywords: tuple[str, ...]) -> bool:

@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = (import.meta.env.VITE_API_BASE || "http://127.0.0.1:8090/api").replace(/\/$/, "");
+const API_BASE = (import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8090/api`).replace(/\/$/, "");
 
 const client = axios.create({
   baseURL: API_BASE,

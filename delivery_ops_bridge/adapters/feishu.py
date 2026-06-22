@@ -68,7 +68,29 @@ class FeishuEventParser:
             parsed = json.loads(content)
         except json.JSONDecodeError:
             return content
-        return parsed.get("text") or parsed.get("title") or content
+
+        if "text" in parsed:
+            return parsed["text"]
+
+        if "content" in parsed and isinstance(parsed["content"], list):
+            lines = []
+            if parsed.get("title"):
+                lines.append(parsed["title"])
+            for line_elements in parsed["content"]:
+                if isinstance(line_elements, list):
+                    line_text = ""
+                    for element in line_elements:
+                        if isinstance(element, dict):
+                            if element.get("tag") in ("text", "a"):
+                                line_text += element.get("text", "")
+                            elif element.get("tag") == "at":
+                                name = element.get("user_name") or element.get("name") or "User"
+                                line_text += f"@{name} "
+                    lines.append(line_text)
+            if lines:
+                return "\n".join(lines)
+
+        return parsed.get("title") or content
 
     def _parse_mention(self, raw: Dict[str, Any]) -> Mention:
         mention_id = raw.get("id", {})

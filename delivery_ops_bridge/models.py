@@ -146,6 +146,7 @@ class DailySummary:
     risks: List[Dict[str, Any]]
     shares: List[Dict[str, Any]]
     created_at: str
+    ai_abstract: Optional[str] = None
 
 
 @dataclass
