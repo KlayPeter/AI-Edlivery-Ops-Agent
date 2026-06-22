@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber, Switch, Alert } from 'antd';
+import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber, Switch, Alert, Select } from 'antd';
 import { api } from '../api';
 
 const JOBS = [
@@ -17,9 +17,22 @@ const ConfigPage = () => {
   const [saving, setSaving] = useState(false);
   const [originalConfig, setOriginalConfig] = useState(null);
   const [loadError, setLoadError] = useState('');
+  const [groups, setGroups] = useState([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    
+    // Fetch groups
+    setGroupsLoading(true);
+    api.fetchGroups().then(data => {
+      if (!cancelled) setGroups(data);
+    }).catch(err => {
+      console.error('Failed to fetch groups:', err);
+    }).finally(() => {
+      if (!cancelled) setGroupsLoading(false);
+    });
+
     api.fetchConfig().then(data => {
       if (cancelled) return;
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -103,7 +116,18 @@ const ConfigPage = () => {
                 </Col>
                 <Col span={12}>
                   <Form.Item name={['feishu', 'group_chat_id']} label="群聊 ID">
-                    <Input />
+                    <Select
+                      showSearch
+                      allowClear
+                      loading={groupsLoading}
+                      placeholder="请选择或输入群聊 ID"
+                      optionFilterProp="children"
+                      filterOption={(input, option) =>
+                        (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                        (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                      }
+                      options={groups.map(g => ({ label: g.name, value: g.chat_id }))}
+                    />
                   </Form.Item>
                 </Col>
               </Row>

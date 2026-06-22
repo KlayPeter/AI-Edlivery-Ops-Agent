@@ -253,6 +253,24 @@ class FeishuAdapter:
         except Exception:
             pass
 
+    def list_groups(self) -> List[Dict[str, str]]:
+        if self.dry_run:
+            return [{"chat_id": self.config.group_chat_id, "name": "Mock Group (Dry Run)"}]
+        cmd = [
+            self.config.lark_cli_path,
+            "api", "GET", "/open-apis/im/v1/chats",
+            "--as", "bot"
+        ]
+        try:
+            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=15)
+            if proc.returncode == 0:
+                raw = self._parse_json_output(proc.stdout)
+                items = raw.get("data", {}).get("items", [])
+                return [{"chat_id": item["chat_id"], "name": item["name"]} for item in items if "chat_id" in item and "name" in item]
+        except Exception:
+            pass
+        return []
+
     def _set_public_permission(self, file_token: str, share_link_entity: str) -> SendResult:
         if self.dry_run:
             return SendResult(ok=True, raw={"dry_run": True, "file_token": file_token, "share_link_entity": share_link_entity})

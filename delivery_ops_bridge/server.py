@@ -136,6 +136,14 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"contexts": contexts})
             return
 
+        if path == "/api/feishu/groups":
+            try:
+                groups = self.bridge.feishu.list_groups()
+                self._json_response(200, {"groups": groups})
+            except Exception as e:
+                self._json_response(500, {"error": str(e)})
+            return
+
         self._json_response(404, {"error": "not_found"})
 
     def do_POST(self) -> None:

@@ -51,5 +51,9 @@ export const api = {
     const data = await request(client.get("/contexts"));
     return safeArray(data.contexts);
   },
+  fetchGroups: async () => {
+    const data = await request(client.get("/feishu/groups"));
+    return safeArray(data.groups);
+  },
   triggerJob: (jobName, dryRun = true) => request(client.post(`/jobs/${encodeURIComponent(jobName)}`, { dryRun })),
 };
