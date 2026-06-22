@@ -552,10 +552,12 @@ class MessageHandler:
         content: str,
         tapd_status: str | None,
     ) -> Dict[str, Any]:
+        tapd_error_msg = ""
         if tapd_status and task_data.get("tapd_story_id"):
             tapd_result = self.tapd.update_story_status(task_data["tapd_story_id"], tapd_status)
             if not tapd_result.ok:
                 self.store.append_audit_log("tapd_update_failed", {"task_id": task_data["id"], "error": tapd_result.error})
+                tapd_error_msg = "\n(⚠️ 注：同步至TAPD状态失败，可能任务已被删除)"
         if status == TASK_STATUS_BLOCKED:
             blocked_at = task_data.get("blocked_at") or utc_now_iso()
             task_data["blocked_at"] = blocked_at
@@ -572,7 +574,7 @@ class MessageHandler:
         if update_type == "accepted_by_owner":
             result = self.feishu.send_private_text(
                 task.primary_owner_open_id,
-                f"已确认接受任务：{task.title}\n请补充任务计划：\n\n预计完成时间：\n拆分步骤：\n依赖对象：\n风险点：\n是否需要协助：",
+                f"已确认接受任务：{task.title}{tapd_error_msg}\n请补充任务计划：\n\n预计完成时间：\n拆分步骤：\n依赖对象：\n风险点：\n是否需要协助：",
             )
             if result.message_id:
                 self.store.save_bot_message_context(
@@ -588,9 +590,9 @@ class MessageHandler:
                     )
                 )
             if source == "private" and task.source_message_id:
-                self._notify_source_group(task, f"负责人 {message.sender_name} 已接受任务：{task.title}")
+                self._notify_source_group(task, f"负责人 {message.sender_name} 已接受任务：{task.title}{tapd_error_msg}")
         elif update_type == "owner_marked_done":
-            text = f"{task.primary_owner_name} 已标记任务完成，等待创建人验收：{task.title}\n可直接引用本消息回复：验收通过 / 打回"
+            text = f"{task.primary_owner_name} 已标记任务完成，等待创建人验收：{task.title}{tapd_error_msg}\n可直接引用本消息回复：验收通过 / 打回"
             target_chat_id = message.chat_id if source == "group" else self.config.feishu.group_chat_id
             if source == "group":
                 result = self.feishu.send_reply_text(message.id, text)
@@ -609,10 +611,10 @@ class MessageHandler:
                     )
                 )
         else:
-            self._reply(message, source, f"任务状态已更新：{task.title} -> {status}")
+            self._reply(message, source, f"任务状态已更新：{task.title} -> {status}{tapd_error_msg}")
             if source == "private" and task.source_message_id:
                 action_text = content.strip() if content.strip() else status
-                self._notify_source_group(task, f"负责人 {message.sender_name} 更新了任务状态：{status}\n回复内容：{action_text}")
+                self._notify_source_group(task, f"负责人 {message.sender_name} 更新了任务状态：{status}{tapd_error_msg}\n回复内容：{action_text}")
         self.store.append_audit_log("task_status_updated", {"task_id": task.id, "status": status, "update_type": update_type})
         return {"handled": True, "action": update_type, "task_id": task.id, "status": status}
 
