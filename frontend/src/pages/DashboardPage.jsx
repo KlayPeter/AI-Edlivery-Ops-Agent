@@ -42,8 +42,15 @@ const DashboardPage = () => {
   }
 
   return (
-    <Layout style={{ height: '100%', background: '#fff' }}>
-      <Sider width={280} theme="light" style={{ borderRight: '1px solid #f0f0f0', overflow: 'auto', height: '100%' }}>
+    <Layout style={{ flex: 1, height: '100%', background: '#fff' }}>
+      <Sider 
+        width={280} 
+        theme="light" 
+        collapsible
+        collapsedWidth={0}
+        defaultCollapsed={true}
+        style={{ position: 'absolute', zIndex: 10, borderRight: '1px solid #f0f0f0', height: '100%', overflow: 'auto' }}
+      >
         <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0f0f0' }}>
           <Title level={4} style={{ margin: 0 }}>历史看板</Title>
         </div>

@@ -56,8 +56,8 @@ function AppContent() {
           style={{ flex: 1, minWidth: 0, fontSize: '16px' }} 
         />
       </Header>
-      <Content style={{ background: '#f5f5f5', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ background: '#fff', flex: 1, borderRadius: '8px', overflow: 'hidden' }}>
+      <Content style={{ background: '#f5f5f5', padding: '24px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <div style={{ background: '#fff', flex: 1, borderRadius: '8px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/logs" element={<LogsPage />} />
