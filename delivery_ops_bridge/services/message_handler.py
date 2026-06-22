@@ -427,8 +427,12 @@ class MessageHandler:
                 result = self._apply_ai_status_action(message, source, task_data, intent.fields.status_action)
                 reason = result.get("action", "") if result else "unsupported_status_action"
         elif intent.intent == "create_task":
-            result = self._create_task_from_ai_intent(message, intent)
-            reason = result.get("action", "") if result else "missing_create_fields"
+            explicit_command = parse_task_command(message.text, message.mentions, self.config.feishu.bot_open_id)
+            if not explicit_command.should_create:
+                reason = "explicit_create_required"
+            else:
+                result = self._create_task_from_ai_intent(message, intent)
+                reason = result.get("action", "") if result else "missing_create_fields"
         elif intent.intent == "unknown":
             reason = "unknown"
 
@@ -550,6 +554,10 @@ class MessageHandler:
         return {"handled": True, "action": "ai_clarification", "reason": "unsupported_status_action"}
 
     def _create_task_from_ai_intent(self, message: SourceMessage, intent: MessageIntent) -> Optional[Dict[str, Any]]:
+        explicit_command = parse_task_command(message.text, message.mentions, self.config.feishu.bot_open_id)
+        if not explicit_command.should_create:
+            return None
+
         owner = self.config.member_by_open_id(intent.fields.owner_open_id)
         title = intent.fields.title or intent.task_ref.title
         if not owner or not title:

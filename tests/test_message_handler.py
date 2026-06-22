@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from delivery_ops_bridge.adapters.feishu import WORKING_REACTION_EMOJI_TYPE, SendResult
 from delivery_ops_bridge.models import BotMessageContext, Task, utc_now_iso
 from delivery_ops_bridge.services.message_intent import IntentFields, IntentTaskRef, MessageIntent
+from delivery_ops_bridge.services.summaries import build_daily_summary, render_daily_summary
 from tests.conftest import feishu_event, mention
 
 
@@ -232,6 +233,23 @@ def test_ai_missing_task_context_does_not_execute(handler):
     assert replies == [("om_ai_missing_task", "请引用对应任务消息回复，或直接带上任务ID。")]
 
 
+def test_ai_create_task_requires_explicit_assignee_mention(handler):
+    handler.intent_parser = FakeIntentParser(
+        MessageIntent(
+            intent="create_task",
+            confidence=0.95,
+            fields=IntentFields(title="整理登录接口问题", owner_open_id="ou_zhangsan"),
+        )
+    )
+
+    result = handler.handle_event(
+        feishu_event("@AI交付助理 帮我给张三建个任务整理登录接口问题", mentions=[mention("ou_bot", "AI交付助理")])
+    )
+
+    assert result["handled"] is False
+    assert handler.store.list_tasks() == []
+
+
 def test_plain_chat_does_not_create_task(handler):
     event = feishu_event("张三今天看看登录接口吧", mentions=[])
 
@@ -442,3 +460,25 @@ def test_group_reply_acceptance_uses_task_context(handler):
     result = handler.handle_event(accept_event)
 
     assert result["action"] == "accepted"
+
+
+def test_daily_summary_classifies_group_messages_with_traceability(handler):
+    handler.handle_event(
+        feishu_event(
+            "测试环境无法登录，影响 App 回归，需要后端协助。结论：今天先暂停回归。资料：https://example.com/doc",
+            message_id="om_summary_trace",
+            mentions=[],
+        )
+    )
+
+    summary = build_daily_summary(handler.store, "oc_group", date(2026, 6, 18))
+    rendered = render_daily_summary(summary)
+
+    assert summary.blockers[0]["source_message_ids"] == ["om_summary_trace"]
+    assert summary.blockers[0]["confidence"] > 0
+    assert summary.decisions[0]["source_message_ids"] == ["om_summary_trace"]
+    assert summary.risks[0]["source_message_ids"] == ["om_summary_trace"]
+    assert summary.shares[0]["source_message_ids"] == ["om_summary_trace"]
+    assert "四、决策结论" in rendered
+    assert "六、资料分享" in rendered
+    assert "om_summary_trace" in rendered
