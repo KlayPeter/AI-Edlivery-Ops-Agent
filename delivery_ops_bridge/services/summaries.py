@@ -273,11 +273,9 @@ def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter) 
         message = messages_by_id.get(message_id)
         if not item_type or not message:
             continue
-        confidence = _confidence(raw_item.get("confidence"))
-        if confidence < 0.6:
-            continue
+        confidence = _confidence(raw_item.get("confidence", 1.0))
         title = _string(raw_item.get("title")) or _compact_title(str(message.get("text", "")))
-        if confidence < 0.85:
+        if confidence < 0.85 and confidence != 1.0:
             title = f"可能：{title}"
         ai_result = {
             "type": item_type,
@@ -481,7 +479,7 @@ def _first_message_id(item: Dict[str, Any]) -> str:
 
 def _confidence(value: Any) -> float:
     if not isinstance(value, (int, float)):
-        return 0.0
+        return 1.0
     return max(0.0, min(float(value), 1.0))
 
 
