@@ -36,6 +36,7 @@ TAPD_STATUS_IN_PROGRESS = "status_14"
 TAPD_STATUS_TESTING = "status_3"
 TAPD_STATUS_DONE = "status_5"
 TAPD_STATUS_CANCELLED = "status_20"
+TAPD_STATUS_BLOCKED = "workflow_suspended"
 WORKING_REACTION_MIN_SECONDS = 1.2
 AI_CONFIDENCE_THRESHOLD = 0.85
 PRIORITY_TO_TAPD_LABEL = {"P0": "High", "P1": "High", "P2": "Middle", "P3": "Low"}
@@ -472,9 +473,9 @@ class MessageHandler:
             status_word = match.group(2)
             content = text
             if "阻塞" in status_word:
-                return self._set_task_status(message, source, task_data, TASK_STATUS_BLOCKED, "blocked", content, None)
+                return self._set_task_status(message, source, task_data, TASK_STATUS_BLOCKED, "blocked", content, TAPD_STATUS_BLOCKED)
             if "完成" in status_word:
-                return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", content, None)
+                return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", content, TAPD_STATUS_TESTING)
             return self._save_progress(message, source, task_data, content)
 
         direct_match = re.match(r"(.+?)\s*(已完成|完成了|阻塞了|阻塞|进度[:：])(.+)?$", text)
@@ -486,16 +487,16 @@ class MessageHandler:
                     status_word = direct_match.group(2)
                     content = text
                     if "阻塞" in status_word:
-                        return self._set_task_status(message, source, task_data, TASK_STATUS_BLOCKED, "blocked", content, None)
+                        return self._set_task_status(message, source, task_data, TASK_STATUS_BLOCKED, "blocked", content, TAPD_STATUS_BLOCKED)
                     if "完成" in status_word:
-                        return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", content, None)
+                        return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", content, TAPD_STATUS_TESTING)
                     return self._save_progress(message, source, task_data, content)
 
         if contextual_task:
             if re.match(r"^\s*(?:这个)?(?:该)?(?:任务)?\s*(已完成|完成了)\s*$", text):
                 return self._set_task_status(message, source, contextual_task, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", text, TAPD_STATUS_TESTING)
             if re.match(r"^\s*(?:这个)?(?:该)?(?:任务)?\s*(阻塞|阻塞了)(?:[:：].+)?$", text):
-                return self._set_task_status(message, source, contextual_task, TASK_STATUS_BLOCKED, "blocked", text, None)
+                return self._set_task_status(message, source, contextual_task, TASK_STATUS_BLOCKED, "blocked", text, TAPD_STATUS_BLOCKED)
             if text.startswith("进度") or reply_context and reply_context.get("context_type") == "task_confirmation":
                 return self._save_progress(message, source, contextual_task, text)
         return None
@@ -798,7 +799,7 @@ class MessageHandler:
             task = Task(**task_data)
             self._save_update(task, standup.open_id, standup.user_name, "progress", f"站会进度：{item}", "standup", message.id)
             if self._looks_done(item):
-                self._set_task_status(message, "private", task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", f"站会标记完成：{item}", None)
+                self._set_task_status(message, "private", task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", f"站会标记完成：{item}", TAPD_STATUS_TESTING)
             if task.id not in seen:
                 linked.append(task.id)
                 seen.add(task.id)
@@ -807,7 +808,7 @@ class MessageHandler:
             if not task_data:
                 continue
             task = Task(**task_data)
-            self._set_task_status(message, "private", task_data, TASK_STATUS_BLOCKED, "blocked", f"站会阻塞：{item}", None)
+            self._set_task_status(message, "private", task_data, TASK_STATUS_BLOCKED, "blocked", f"站会阻塞：{item}", TAPD_STATUS_BLOCKED)
             if task.id not in seen:
                 linked.append(task.id)
                 seen.add(task.id)
