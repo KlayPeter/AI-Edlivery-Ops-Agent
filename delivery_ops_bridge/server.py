@@ -3,15 +3,26 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import subprocess
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import unquote, urlparse
 
 from .adapters.feishu import FeishuAdapter
 from .adapters.tapd import TapdAdapter
-from .config import load_config
+from .config import load_config, resolve_config_path, write_config
 from .services.dashboard import DashboardService
 from .services.message_handler import MessageHandler
 from .storage import JsonStore
+
+MAX_JSON_BODY_BYTES = 1024 * 1024
+VALID_JOBS = {"standup-push", "standup-remind", "standup-summary", "overdue-scan", "daily-summary", "dashboard"}
+
+
+class RequestBodyTooLarge(ValueError):
+    pass
 
 
 def build_handler(config_path: str | None = None, dry_run: bool = False) -> MessageHandler:
@@ -26,11 +37,18 @@ def build_handler(config_path: str | None = None, dry_run: bool = False) -> Mess
         group_name=config.feishu.group_name,
         public_base_url=config.runtime.public_base_url,
     )
-    return MessageHandler(config, store, feishu, tapd, dashboard)
+    handler = MessageHandler(config, store, feishu, tapd, dashboard)
+    handler.config_path = resolve_config_path(config_path)
+    handler.dry_run = dry_run
+    return handler
 
 
 class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
-    bridge: MessageHandler
+    bridge: MessageHandler = None  # type: ignore
+    _processed_events: Dict[str, float] = {}
+
+    def _route_path(self) -> str:
+        return urlparse(self.path).path
 
     def do_OPTIONS(self) -> None:
         self.send_response(200)
@@ -40,20 +58,25 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
-        if self.path == "/healthz":
+        path = self._route_path()
+        if path == "/healthz":
             self._json_response(200, {"ok": True})
             return
             
-        if self.path == "/api/config":
-            config_path = os.environ.get("DELIVERY_OPS_CONFIG", "config/config.json")
+        if path == "/api/config":
+            config_path = self._config_path()
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with config_path.open("r", encoding="utf-8") as f:
                     self._json_response(200, json.load(f))
+            except FileNotFoundError:
+                self._json_response(404, {"error": "config_not_found"})
+            except json.JSONDecodeError:
+                self._json_response(500, {"error": "config_invalid_json"})
             except Exception as e:
                 self._json_response(500, {"error": str(e)})
             return
 
-        if self.path == "/api/dashboards":
+        if path == "/api/dashboards":
             dashboards_dir = self.bridge.config.data_path / "dashboards"
             if not dashboards_dir.exists():
                 self._json_response(200, {"dashboards": []})
@@ -62,10 +85,9 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"dashboards": sorted(files, reverse=True)})
             return
             
-        if self.path.startswith("/api/dashboards/"):
-            filename = self.path.split("/")[-1]
-            filepath = self.bridge.config.data_path / "dashboards" / filename
-            if filepath.exists() and filepath.name.endswith(".html"):
+        if path.startswith("/api/dashboards/"):
+            filepath = self._dashboard_path(path)
+            if filepath and filepath.exists():
                 with filepath.open("r", encoding="utf-8") as f:
                     html_content = f.read().encode("utf-8")
                     self.send_response(200)
@@ -78,7 +100,7 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             self._json_response(404, {"error": "not_found"})
             return
 
-        if self.path == "/api/logs":
+        if path == "/api/logs":
             logs_path = self.bridge.config.data_path / "logs" / "audit.jsonl"
             if not logs_path.exists():
                 self._json_response(200, {"logs": []})
@@ -94,7 +116,7 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"logs": list(reversed(logs))[:100]})
             return
 
-        if self.path == "/api/contexts":
+        if path == "/api/contexts":
             contexts = self.bridge.store.list_bot_message_contexts()
             contexts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
             
@@ -112,33 +134,52 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
         self._json_response(404, {"error": "not_found"})
 
     def do_POST(self) -> None:
-        if self.path == "/api/config":
+        path = self._route_path()
+        if path == "/api/config":
             try:
                 payload = self._read_json()
-                config_path = os.environ.get("DELIVERY_OPS_CONFIG", "config/config.json")
-                with open(config_path, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, ensure_ascii=False, indent=2)
+                if not isinstance(payload, dict):
+                    self._json_response(400, {"error": "invalid_config"})
+                    return
+                config_path = self._config_path()
+                write_config(config_path, payload)
+                type(self).bridge = build_handler(str(config_path), dry_run=getattr(self.bridge, "dry_run", False))
                 self._json_response(200, {"ok": True})
+            except json.JSONDecodeError:
+                self._json_response(400, {"error": "invalid_json"})
+            except RequestBodyTooLarge:
+                self._json_response(413, {"error": "request_body_too_large"})
+            except ValueError as e:
+                self._json_response(400, {"error": "invalid_config", "message": str(e)})
             except Exception as e:
                 self._json_response(500, {"error": str(e)})
             return
 
-        if self.path.startswith("/api/jobs/"):
-            job_name = self.path.split("/")[-1]
-            valid_jobs = ["standup-push", "standup-remind", "standup-summary", "overdue-scan", "daily-summary", "dashboard"]
-            if job_name in valid_jobs:
+        if path.startswith("/api/jobs/"):
+            job_name = unquote(path.split("/")[-1])
+            if job_name in VALID_JOBS:
                 try:
                     payload = self._read_json()
+                except RequestBodyTooLarge:
+                    self._json_response(413, {"error": "request_body_too_large"})
+                    return
                 except Exception:
+                    payload = {}
+                if not isinstance(payload, dict):
                     payload = {}
                 dry_run = payload.get("dryRun", False)
                 try:
-                    import subprocess
-                    cmd = ["python3", "-m", "delivery_ops_bridge.cli", "--config", "config/config.json"]
+                    cmd = [sys.executable, "-m", "delivery_ops_bridge.cli", "--config", str(self._config_path())]
                     if dry_run:
                         cmd.append("--dry-run")
                     cmd.extend(["job", job_name])
-                    subprocess.Popen(cmd)
+                    subprocess.Popen(
+                        cmd,
+                        cwd=str(self.bridge.config.root_path),
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        close_fds=True,
+                    )
                     self.bridge.store.append_audit_log("job_triggered", {"job_name": job_name, "dry_run": dry_run})
                     self._json_response(200, {"ok": True, "message": f"任务 {job_name} 已在后台启动"})
                 except Exception as e:
@@ -152,6 +193,12 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             self._json_response(400, {"error": "invalid_json"})
             return
+        except RequestBodyTooLarge:
+            self._json_response(413, {"error": "request_body_too_large"})
+            return
+        if not isinstance(payload, dict):
+            self._json_response(400, {"error": "invalid_json"})
+            return
 
         if payload.get("type") == "url_verification":
             self._json_response(200, {"challenge": payload.get("challenge", "")})
@@ -162,17 +209,56 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             self._json_response(403, {"error": "invalid_verify_token"})
             return
 
+        event_id = payload.get("header", {}).get("event_id") or payload.get("uuid")
+        if event_id:
+            import time
+            now = time.time()
+            if event_id in type(self)._processed_events:
+                if now - type(self)._processed_events[event_id] < 3600:
+                    self._json_response(200, {"ok": True, "message": "duplicate event"})
+                    return
+            type(self)._processed_events[event_id] = now
+            if len(type(self)._processed_events) > 1000:
+                keys_to_delete = [k for k, v in type(self)._processed_events.items() if now - v > 3600]
+                for k in keys_to_delete:
+                    del type(self)._processed_events[k]
+
         try:
-            result = self.bridge.handle_event(payload)
-            self._json_response(200, result)
+            import threading
+            threading.Thread(target=self._async_handle_event, args=(payload,)).start()
+            self._json_response(200, {"ok": True, "message": "processing in background"})
         except Exception as exc:
             self.bridge.store.append_audit_log("handler_error", {"error": str(exc)})
             self._json_response(500, {"error": str(exc)})
 
+    def _async_handle_event(self, payload: Dict[str, Any]) -> None:
+        try:
+            self.bridge.handle_event(payload)
+        except Exception as exc:
+            self.bridge.store.append_audit_log("handler_error", {"error": str(exc)})
+
     def _read_json(self) -> Dict[str, Any]:
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            raise json.JSONDecodeError("invalid content length", "", 0)
+        if length > MAX_JSON_BODY_BYTES:
+            raise RequestBodyTooLarge("request_body_too_large")
         body = self.rfile.read(length)
         return json.loads(body.decode("utf-8"))
+
+    def _config_path(self) -> Path:
+        return getattr(self.bridge, "config_path", resolve_config_path())
+
+    def _dashboard_path(self, path: str) -> Path | None:
+        filename = unquote(path.removeprefix("/api/dashboards/"))
+        if "/" in filename or "\\" in filename or not filename.endswith(".html"):
+            return None
+        dashboards_dir = (self.bridge.config.data_path / "dashboards").resolve()
+        filepath = (dashboards_dir / filename).resolve()
+        if filepath.parent != dashboards_dir:
+            return None
+        return filepath
 
     def _json_response(self, status: int, payload: Dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
