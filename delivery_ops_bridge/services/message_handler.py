@@ -57,19 +57,25 @@ class MessageHandler:
         message = self.parser.parse(payload)
         if message is None:
             return {"handled": False, "reason": "not_message_event"}
-        self.store.save_source_message(message)
-        self.store.append_audit_log("source_message_received", {
-            "message_id": message.id, 
-            "chat_type": message.chat_type,
-            "sender": message.sender_name,
-            "text": message.text[:200]
-        })
+        
+        reaction_id = self.feishu.add_reaction(message.id, "WIP")
+        try:
+            self.store.save_source_message(message)
+            self.store.append_audit_log("source_message_received", {
+                "message_id": message.id, 
+                "chat_type": message.chat_type,
+                "sender": message.sender_name,
+                "text": message.text[:200]
+            })
 
-        if self._is_system_noise(message.text):
-            return {"handled": False, "reason": "system_noise"}
-        if message.chat_type == "group":
-            return self._handle_group_message(message)
-        return self._handle_private_message(message)
+            if self._is_system_noise(message.text):
+                return {"handled": False, "reason": "system_noise"}
+            if message.chat_type == "group":
+                return self._handle_group_message(message)
+            return self._handle_private_message(message)
+        finally:
+            if reaction_id:
+                self.feishu.remove_reaction(message.id, reaction_id)
 
     def _handle_group_message(self, message: SourceMessage) -> Dict[str, Any]:
         reply_context = self._resolve_reply_context(message)

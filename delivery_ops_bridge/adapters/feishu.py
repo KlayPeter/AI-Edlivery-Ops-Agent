@@ -149,6 +149,40 @@ class FeishuAdapter:
             return SendResult(ok=False, raw={}, error=str(exc))
         return self._result_from_process(proc)
 
+    def add_reaction(self, message_id: str, emoji_type: str = "WIP") -> Optional[str]:
+        if self.dry_run or not message_id:
+            return None
+        cmd = [
+            self.config.lark_cli_path,
+            "im", "reactions", "create",
+            "--as", "bot",
+            "--message-id", message_id,
+            "--data", json.dumps({"reaction_type": {"emoji_type": emoji_type}}),
+        ]
+        try:
+            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=10)
+            if proc.returncode == 0:
+                raw = self._parse_json_output(proc.stdout)
+                return raw.get("data", {}).get("reaction_id") or raw.get("reaction_id")
+        except Exception:
+            pass
+        return None
+
+    def remove_reaction(self, message_id: str, reaction_id: str) -> None:
+        if self.dry_run or not message_id or not reaction_id:
+            return
+        cmd = [
+            self.config.lark_cli_path,
+            "im", "reactions", "delete",
+            "--as", "bot",
+            "--message-id", message_id,
+            "--reaction-id", reaction_id,
+        ]
+        try:
+            subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=10)
+        except Exception:
+            pass
+
     def _set_public_permission(self, file_token: str, share_link_entity: str) -> SendResult:
         if self.dry_run:
             return SendResult(ok=True, raw={"dry_run": True, "file_token": file_token, "share_link_entity": share_link_entity})
