@@ -71,7 +71,9 @@ class MessageHandler:
             self.store.save_source_message(message)
             self.store.append_audit_log("source_message_received", {
                 "message_id": message.id, 
+                "chat_id": message.chat_id,
                 "chat_type": message.chat_type,
+                "sent_at": message.sent_at,
                 "sender": message.sender_name,
                 "text": message.text[:200]
             })
@@ -120,10 +122,21 @@ class MessageHandler:
             ai_result = self._maybe_handle_ai_intent(message, "group", reply_context)
             if ai_result:
                 return ai_result
-            return {"handled": False, "reason": command.reason}
+            self._reply(message, "group", "抱歉，我没有识别到有效的指令。\n目前支持的操作有：\n- 创建/安排任务\n- 对我回复接受、打回、完成某任务\n- 回复具体进度")
+            return {"handled": True, "action": "unrecognized_command", "reason": command.reason}
         key = f"{message.id}:create_task"
         if self.store.has_idempotency_key(key):
             return {"handled": True, "action": "idempotent_skip"}
+        message.ai_result = {
+            "type": "task_command",
+            "parser": "rule",
+            "reason": command.reason,
+            "title": command.title,
+            "priority": command.priority,
+            "due_date": command.due_date,
+        }
+        message.confidence = 1.0
+        self.store.save_source_message(message)
         result = self._create_task_from_command(message, command)
         self.store.set_idempotency_key(key, result)
         return result
@@ -133,9 +146,20 @@ class MessageHandler:
         if sender:
             message.sender_open_id = sender.open_id
             message.sender_name = sender.name
+            self.store.save_source_message(message)
         reply_context = self._resolve_reply_context(message)
         if self._should_treat_as_standup(message, reply_context):
             standup = parse_standup(message.sender_open_id, message.sender_name, message.text, message.id)
+            standup.ai_result = {"type": "standup", "parser": "structured_or_natural_language"}
+            standup.confidence = 1.0
+            standup.trace = self._source_trace(message, standup.ai_result, standup.confidence)
+            standup.source_group_id = standup.trace["source_group_id"]
+            standup.source_sender_open_id = standup.trace["sender_open_id"]
+            standup.source_sender_name = standup.trace["sender_name"]
+            standup.source_sent_at = standup.trace["sent_at"]
+            message.ai_result = standup.ai_result
+            message.confidence = standup.confidence
+            self.store.save_source_message(message)
             self.store.save_standup(standup)
             linked = self._link_standup_to_tasks(standup, message)
             self.feishu.send_private_text(message.sender_open_id, "已收到今日站会，谢谢。")
@@ -150,7 +174,8 @@ class MessageHandler:
         ai_result = self._maybe_handle_ai_intent(message, "private", reply_context)
         if ai_result:
             return ai_result
-        return {"handled": False, "reason": "no_private_command"}
+        self._reply(message, "private", "抱歉，我没有识别到有效的指令。\n你可以对我说：创建任务、安排一下，或者向我发送今日站会报告。")
+        return {"handled": True, "action": "unrecognized_command", "reason": "no_private_command"}
 
     def _create_task_from_command(self, message: SourceMessage, command: ParsedTaskCommand) -> Dict[str, Any]:
         if command.missing_primary_owner:
@@ -158,10 +183,21 @@ class MessageHandler:
             task.is_draft = True
             self.store.save_task(task)
             assignees = "、".join(command.assignee_names if hasattr(command, "assignee_names") else [item.name for item in command.assignees])
-            self.feishu.send_reply_text(
+            res = self.feishu.send_reply_text(
                 message.id,
                 f"已识别到多人任务，请指定主负责人：\n\n任务：{command.title}\n参与人：{assignees}\n\n请回复：主负责人 @某某",
             )
+            if res.message_id:
+                self.store.save_bot_message_context(
+                    BotMessageContext(
+                        message_id=res.message_id,
+                        context_type="pending_primary_owner",
+                        created_at=utc_now_iso(),
+                        chat_id=message.chat_id,
+                        task_id=task.id,
+                        task_title=task.title,
+                    )
+                )
             return {"handled": True, "action": "pending_primary_owner", "task_id": task.id}
 
         if command.is_independent and len(command.assignees) > 1:
@@ -257,6 +293,100 @@ class MessageHandler:
         reply_context: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         text = self._strip_bot_mention(message).strip()
+
+        if reply_context and reply_context.get("context_type") == "pending_primary_owner":
+            match = re.search(r"主负责人\s*", text)
+            if match:
+                target_mention = next((m for m in message.mentions if m.open_id != self.config.feishu.bot_open_id), None)
+                if not target_mention:
+                    self._reply(message, source, "请 @ 出主负责人。")
+                    return {"handled": True, "action": "missing_mention"}
+
+                task_id = reply_context.get("task_id")
+                task_data = self.store.get_task(task_id)
+                if not task_data:
+                    return {"handled": True, "action": "task_not_found"}
+
+                task_data["primary_owner_open_id"] = target_mention.open_id
+                task_data["primary_owner_name"] = target_mention.name
+                if target_mention.open_id not in task_data.get("assignee_open_ids", []):
+                    task_data.setdefault("assignee_open_ids", []).append(target_mention.open_id)
+                    task_data.setdefault("assignee_names", []).append(target_mention.name)
+
+                original_msg = message
+
+                command = ParsedTaskCommand(
+                    should_create=True,
+                    reason="owner_specified",
+                    title=task_data.get("title", "未命名任务"),
+                    primary_owner=target_mention,
+                    assignees=[Mention(open_id=oid, name=n) for oid, n in zip(task_data["assignee_open_ids"], task_data["assignee_names"])],
+                    priority=task_data.get("priority", "P2"),
+                    tapd_priority_label=PRIORITY_TO_TAPD_LABEL.get(task_data.get("priority", "P2"), "Middle"),
+                    due_date=task_data.get("due_date"),
+                    acceptance_criteria=task_data.get("acceptance_criteria", []),
+                    description=task_data.get("description", ""),
+                )
+
+                description = self._task_description(original_msg, command)
+                tapd_result = self.tapd.create_story(
+                    title=command.title,
+                    owner=target_mention.name,
+                    priority_label=command.tapd_priority_label,
+                    due_date=command.due_date,
+                    description=description,
+                    parent_id=task_data.get("parent_id"),
+                )
+
+                if not tapd_result.ok:
+                    self.store.append_audit_log("tapd_create_failed", {"message_id": message.id, "error": tapd_result.error})
+                    self.feishu.send_reply_text(message.id, f"任务创建失败：{tapd_result.error or 'TAPD API 调用失败'}")
+                    return {"handled": True, "action": "tapd_create_failed", "error": tapd_result.error}
+
+                task_data["tapd_story_id"] = tapd_result.story_id
+                task_data["tapd_url"] = tapd_result.url
+                task_data["status"] = TASK_STATUS_PENDING_CONFIRMATION
+                task_data["is_draft"] = False
+                task_data["updated_at"] = utc_now_iso()
+
+                task = Task(**task_data)
+                self.store.save_task(task)
+
+                self._save_update(task, message.sender_open_id, message.sender_name, "primary_owner_set", f"指定主负责人：{target_mention.name}", source, message.id)
+
+                private_text = self._private_confirmation_text(task)
+                private_result = self.feishu.send_private_text(target_mention.open_id, private_text)
+                if private_result.chat_id:
+                    self.store.update_chat_id(target_mention.open_id, private_result.chat_id)
+                if private_result.message_id:
+                    self.store.save_bot_message_context(
+                        BotMessageContext(
+                            message_id=private_result.message_id,
+                            context_type="task_confirmation",
+                            created_at=utc_now_iso(),
+                            chat_id=private_result.chat_id or "",
+                            target_open_id=target_mention.open_id,
+                            task_id=task.id,
+                            task_title=task.title,
+                            metadata={"tapd_story_id": task.tapd_story_id or ""},
+                        )
+                    )
+                group_result = self.feishu.send_reply_text(message.id, self._group_created_text(task))
+                if group_result.message_id:
+                    self.store.save_bot_message_context(
+                        BotMessageContext(
+                            message_id=group_result.message_id,
+                            context_type="task_group_notice",
+                            created_at=utc_now_iso(),
+                            chat_id=message.chat_id,
+                            task_id=task.id,
+                            task_title=task.title,
+                            metadata={"tapd_story_id": task.tapd_story_id or ""},
+                        )
+                    )
+                self.store.append_audit_log("task_created_after_owner_set", {"task_id": task.id, "title": task.title, "owner": target_mention.name})
+                return {"handled": True, "action": "task_created", "task_id": task.id}
+
         match = re.search(r"(接受|拒绝|验收通过|打回)\s*([A-Za-z0-9_-]+|\d{6,})", text)
         if match:
             action, identifier = match.group(1), match.group(2)
@@ -403,7 +533,11 @@ class MessageHandler:
         contextual_task = self._task_from_reply_context(reply_context)
         intent = self.intent_parser.parse(message, reply_context, contextual_task, self.config.members)
         if not intent.available:
+            self.store.append_audit_log("ai_intent_failed", {"message_id": message.id, "error": intent.error})
             return None
+        message.ai_result = self._intent_payload(intent)
+        message.confidence = intent.confidence
+        self.store.save_source_message(message)
         if intent.needs_clarification or intent.confidence < AI_CONFIDENCE_THRESHOLD:
             if intent.clarification:
                 self._reply(message, source, intent.clarification)
@@ -556,7 +690,7 @@ class MessageHandler:
         self._save_update(task, message.sender_open_id, message.sender_name, "task_plan", content, source, message.id)
         self._reply(message, source, f"已保存任务计划：{task.title}")
         if source == "private" and task.source_message_id:
-            self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 已补充任务计划：{task.title}")
+            self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 补充了任务计划：\n{content}")
         self.store.append_audit_log("task_plan_saved", {"task_id": task.id, "source_message_id": message.id})
         return {"handled": True, "action": "task_plan_saved", "task_id": task.id}
 
@@ -705,6 +839,12 @@ class MessageHandler:
         now = utc_now_iso()
         owner = command.primary_owner or Mention(open_id="", name="")
         task_id = f"task-{message.id}-{abs(hash(command.title + owner.open_id)) % 100000}"
+        ai_result = message.ai_result or {
+            "type": "task_command",
+            "parser": command.reason or "rule",
+            "title": command.title,
+        }
+        confidence = message.confidence if message.confidence is not None else 1.0
         return Task(
             id=task_id,
             title=command.title,
@@ -721,6 +861,13 @@ class MessageHandler:
             description=command.description,
             source_message_id=message.id,
             source_group_id=message.chat_id,
+            source_sender_open_id=message.sender_open_id,
+            source_sender_name=message.sender_name,
+            source_sent_at=message.sent_at,
+            raw_text=message.text,
+            ai_result=ai_result,
+            confidence=confidence,
+            trace=self._source_trace(message, ai_result, confidence),
             tapd_story_id=tapd_story_id,
             tapd_url=tapd_url,
             parent_id=parent_id,
@@ -732,13 +879,13 @@ class MessageHandler:
         lines = []
         if command.acceptance_criteria:
             lines.append("验收标准：" + "；".join(command.acceptance_criteria))
+
+        chat_source = "群聊" if message.chat_type == "group" else "私聊"
         lines.extend(
             [
                 f"提出人：{message.sender_name}",
                 "---",
-                "来源：飞书消息",
-                f"来源消息ID：{message.id}",
-                f"原始文本：{message.text}",
+                f"来源：飞书{chat_source}消息",
             ]
         )
         return "\n".join(lines)
@@ -752,7 +899,7 @@ class MessageHandler:
             f"验收标准：{'；'.join(task.acceptance_criteria) or '未设置'}\n"
             f"提出人：{task.creator_name}\n"
             f"链接：{task.tapd_url or '未生成'}\n\n"
-            f"回复：接受{task.tapd_story_id or task.id} / 拒绝{task.tapd_story_id or task.id}"
+            f"回复：接受{task.tapd_story_id or task.id} / 拒绝{task.tapd_story_id or task.id} 或者引用消息进行回复"
         )
 
     def _group_created_text(self, task: Task) -> str:
@@ -777,6 +924,10 @@ class MessageHandler:
         source: str,
         source_message_id: str | None,
     ) -> None:
+        source_message = self.store.get_source_message(source_message_id)
+        ai_result = {"type": update_type, "parser": "structured_event", "content": content}
+        confidence = 1.0
+        trace = self._source_trace(source_message, ai_result, confidence) if source_message else {}
         update = TaskUpdate(
             id=f"update-{task.id}-{len(self.store.list_task_updates(task.id)) + 1}",
             task_id=task.id,
@@ -786,9 +937,75 @@ class MessageHandler:
             content=content,
             source=source,
             source_message_id=source_message_id,
+            source_group_id=trace.get("source_group_id", ""),
+            source_sender_open_id=trace.get("sender_open_id", ""),
+            source_sender_name=trace.get("sender_name", ""),
+            source_sent_at=trace.get("sent_at", ""),
+            raw_text=trace.get("raw_text", ""),
+            ai_result=ai_result,
+            confidence=confidence,
+            trace=trace,
             created_at=utc_now_iso(),
         )
         self.store.save_task_update(update)
+
+    def _source_trace(
+        self,
+        message: SourceMessage | Dict[str, Any],
+        ai_result: Dict[str, Any] | None = None,
+        confidence: float | None = None,
+    ) -> Dict[str, Any]:
+        if isinstance(message, SourceMessage):
+            return {
+                "source_group_id": message.chat_id,
+                "source_message_id": message.id,
+                "source_message_ids": [message.id],
+                "sender_open_id": message.sender_open_id,
+                "sender_name": message.sender_name,
+                "sent_at": message.sent_at,
+                "raw_text": message.text,
+                "ai_result": ai_result or message.ai_result,
+                "confidence": confidence if confidence is not None else message.confidence,
+            }
+        message_id = str(message.get("id") or message.get("source_message_id") or "")
+        return {
+            "source_group_id": str(message.get("chat_id") or message.get("source_group_id") or ""),
+            "source_message_id": message_id,
+            "source_message_ids": [message_id] if message_id else [],
+            "sender_open_id": str(message.get("sender_open_id") or message.get("source_sender_open_id") or ""),
+            "sender_name": str(message.get("sender_name") or message.get("source_sender_name") or ""),
+            "sent_at": str(message.get("sent_at") or message.get("source_sent_at") or ""),
+            "raw_text": str(message.get("text") or message.get("raw_text") or ""),
+            "ai_result": ai_result or message.get("ai_result") or {},
+            "confidence": confidence if confidence is not None else message.get("confidence"),
+        }
+
+    def _intent_payload(self, intent: MessageIntent) -> Dict[str, Any]:
+        fields = {
+            key: value
+            for key, value in {
+                "title": intent.fields.title,
+                "due_date": intent.fields.due_date,
+                "priority": intent.fields.priority,
+                "owner_open_id": intent.fields.owner_open_id,
+                "progress": intent.fields.progress,
+                "status_action": intent.fields.status_action,
+            }.items()
+            if value
+        }
+        return {
+            "type": "message_intent",
+            "parser": "llm",
+            "intent": intent.intent,
+            "task_ref": {
+                "task_id": intent.task_ref.task_id,
+                "tapd_story_id": intent.task_ref.tapd_story_id,
+                "title": intent.task_ref.title,
+            },
+            "fields": fields,
+            "needs_clarification": intent.needs_clarification,
+            "clarification": intent.clarification,
+        }
 
     def _reply(self, message: SourceMessage, source: str, text: str) -> None:
         if source == "group":

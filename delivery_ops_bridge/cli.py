@@ -6,6 +6,7 @@ import sys
 from datetime import date
 
 from .adapters.feishu import FeishuAdapter
+from .adapters.llm import LLMAdapter
 from .adapters.tapd import TapdAdapter
 from .config import load_config
 from .server import build_handler, run_server
@@ -57,8 +58,9 @@ def _run_job(config_path: str | None, dry_run: bool, name: str, day_text: str | 
         
     store = JsonStore(config.data_path)
     feishu = FeishuAdapter(config.feishu, dry_run=dry_run)
+    llm = LLMAdapter(config.ai, dry_run=dry_run)
     dashboard = DashboardService(store, config.data_path, config.project.name, config.feishu.group_name, config.runtime.public_base_url)
-    jobs = ScheduledJobs(config, store, feishu, dashboard)
+    jobs = ScheduledJobs(config, store, feishu, dashboard, llm)
     day = date.fromisoformat(day_text) if day_text else None
     methods = {
         "standup-push": jobs.standup_push,

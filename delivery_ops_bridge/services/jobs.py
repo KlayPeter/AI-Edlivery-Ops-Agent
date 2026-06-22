@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Dict, List
 
+from ..adapters.llm import LLMAdapter
 from ..adapters.feishu import FeishuAdapter
 from ..config import AppConfig
 from ..models import BotMessageContext, TASK_STATUS_ACCEPTED, TASK_STATUS_CANCELLED, TASK_STATUS_OVERDUE, Task, utc_now_iso
@@ -12,11 +13,19 @@ from .summaries import build_daily_summary, render_daily_summary
 
 
 class ScheduledJobs:
-    def __init__(self, config: AppConfig, store: JsonStore, feishu: FeishuAdapter, dashboard: DashboardService):
+    def __init__(
+        self,
+        config: AppConfig,
+        store: JsonStore,
+        feishu: FeishuAdapter,
+        dashboard: DashboardService,
+        llm: LLMAdapter | None = None,
+    ):
         self.config = config
         self.store = store
         self.feishu = feishu
         self.dashboard = dashboard
+        self.llm = llm
 
     def standup_push(self, day: date | None = None) -> Dict[str, int]:
         day = day or date.today()
@@ -75,7 +84,7 @@ class ScheduledJobs:
         return {"submitted": len(standups), "missing": len(missing)}
 
     def daily_summary(self, day: date | None = None) -> Dict[str, str]:
-        summary = build_daily_summary(self.store, self.config.feishu.group_chat_id, day)
+        summary = build_daily_summary(self.store, self.config.feishu.group_chat_id, day, self.llm)
         self.store.save_daily_summary(summary)
         text = render_daily_summary(summary)
         self.feishu.send_group_text(text, self.config.feishu.group_chat_id)

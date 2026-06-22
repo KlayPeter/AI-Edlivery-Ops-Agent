@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import date, timedelta
 
 from delivery_ops_bridge.adapters.feishu import WORKING_REACTION_EMOJI_TYPE, SendResult
+from delivery_ops_bridge.adapters.llm import LLMResult
 from delivery_ops_bridge.models import BotMessageContext, Task, utc_now_iso
 from delivery_ops_bridge.services.message_intent import IntentFields, IntentTaskRef, MessageIntent
 from delivery_ops_bridge.services.summaries import build_daily_summary, render_daily_summary
@@ -19,6 +21,16 @@ class FakeIntentParser:
         return self.intent
 
 
+class FakeSummaryLLM:
+    def __init__(self, items):
+        self.items = items
+        self.calls = []
+
+    def chat(self, system_prompt, user_message):
+        self.calls.append((system_prompt, user_message))
+        return LLMResult(ok=True, content=json.dumps({"items": self.items}, ensure_ascii=False))
+
+
 def test_url_like_task_create_creates_tapd_story_and_task(handler):
     event = feishu_event(
         "@AI交付助理 @张三 创建任务：完成登录接口错误码统一 截止时间：明天 优先级：P1 验收标准：前端可展示对应提示",
@@ -33,6 +45,10 @@ def test_url_like_task_create_creates_tapd_story_and_task(handler):
     assert tasks[0]["primary_owner_open_id"] == "ou_zhangsan"
     assert tasks[0]["priority"] == "P1"
     assert tasks[0]["tapd_story_id"].startswith("dry-")
+    assert tasks[0]["trace"]["source_message_id"] == tasks[0]["source_message_id"]
+    assert tasks[0]["trace"]["raw_text"].startswith("@AI交付助理")
+    assert tasks[0]["ai_result"]["type"] == "task_command"
+    assert tasks[0]["confidence"] == 1.0
 
 
 def test_rule_matched_task_create_does_not_call_ai(handler):
@@ -62,7 +78,8 @@ def test_working_reaction_uses_on_it_emoji(handler):
 
     result = handler.handle_event(feishu_event("普通聊天", message_id="om_working"))
 
-    assert result["handled"] is False
+    assert result["handled"] is True
+    assert result["action"] == "unrecognized_command"
     assert reactions == [("om_working", WORKING_REACTION_EMOJI_TYPE)]
     assert removals == [("om_working", "reaction_1")]
 
@@ -177,6 +194,15 @@ def test_ai_high_confidence_updates_priority_from_task_context(handler):
     assert result["action"] == "ai_task_updated"
     assert handler.store.get_task(created["task_id"])["priority"] == "P1"
     assert replies == [("om_ai_priority", "已更新任务：完成登录接口错误码统一\n优先级：P1")]
+    source_message = handler.store.get_source_message("om_ai_priority")
+    assert source_message["ai_result"]["parser"] == "llm"
+    assert source_message["ai_result"]["intent"] == "update_task"
+    assert source_message["confidence"] == 0.92
+    updates = handler.store.list_task_updates(created["task_id"])
+    ai_update = [item for item in updates if item["update_type"] == "ai_task_updated"][0]
+    assert ai_update["trace"]["source_message_id"] == "om_ai_priority"
+    assert ai_update["trace"]["raw_text"] == "@AI交付助理 优先级拉到 P1"
+    assert ai_update["ai_result"]["type"] == "ai_task_updated"
 
 
 def test_ai_low_confidence_replies_clarification_without_update(handler):
@@ -246,7 +272,8 @@ def test_ai_create_task_requires_explicit_assignee_mention(handler):
         feishu_event("@AI交付助理 帮我给张三建个任务整理登录接口问题", mentions=[mention("ou_bot", "AI交付助理")])
     )
 
-    assert result["handled"] is False
+    assert result["handled"] is True
+    assert result["action"] == "unrecognized_command"
     assert handler.store.list_tasks() == []
 
 
@@ -255,7 +282,8 @@ def test_plain_chat_does_not_create_task(handler):
 
     result = handler.handle_event(event)
 
-    assert result["handled"] is False
+    assert result["handled"] is True
+    assert result["action"] == "unrecognized_command"
     assert handler.store.list_tasks() == []
 
 
@@ -323,6 +351,9 @@ def test_private_standup_is_saved(handler):
     standups = handler.store.list_standups(date.today().isoformat())
     assert len(standups) == 1
     assert standups[0]["today_plan"] == ["联调前端"]
+    assert standups[0]["trace"]["source_message_id"] == "om_standup"
+    assert standups[0]["raw_text"].startswith("【昨日完成】")
+    assert standups[0]["ai_result"]["type"] == "standup"
 
 
 def test_private_standup_links_task_progress_and_done_status(handler):
@@ -588,3 +619,34 @@ def test_daily_summary_classifies_group_messages_with_traceability(handler):
     assert "四、决策结论" in rendered
     assert "六、资料分享" in rendered
     assert "om_summary_trace" in rendered
+
+
+def test_daily_summary_prefers_ai_classification_with_traceability(handler):
+    handler.handle_event(
+        feishu_event(
+            "测试环境登录失败，今天回归被挡住。",
+            message_id="om_summary_ai",
+            mentions=[],
+        )
+    )
+    llm = FakeSummaryLLM(
+        [
+            {
+                "message_id": "om_summary_ai",
+                "type": "blocker",
+                "title": "测试环境登录阻塞",
+                "related_users": ["张三"],
+                "risk_level": "high",
+                "confidence": 0.91,
+            }
+        ]
+    )
+
+    summary = build_daily_summary(handler.store, "oc_group", date(2026, 6, 18), llm)
+
+    assert llm.calls
+    assert summary.blockers[0]["title"] == "测试环境登录阻塞"
+    assert summary.blockers[0]["ai_result"]["parser"] == "llm_daily_summary"
+    assert summary.blockers[0]["confidence"] == 0.91
+    assert summary.blockers[0]["trace"]["source_message_id"] == "om_summary_ai"
+    assert summary.blockers[0]["trace"]["raw_text"] == "测试环境登录失败，今天回归被挡住。"

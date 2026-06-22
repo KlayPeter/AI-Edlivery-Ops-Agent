@@ -68,6 +68,13 @@ class Task:
     source_group_id: str
     created_at: str
     updated_at: str
+    source_sender_open_id: str = ""
+    source_sender_name: str = ""
+    source_sent_at: str = ""
+    raw_text: str = ""
+    ai_result: Dict[str, Any] = field(default_factory=dict)
+    confidence: Optional[float] = None
+    trace: Dict[str, Any] = field(default_factory=dict)
     description: str = ""
     due_date: Optional[str] = None
     acceptance_criteria: List[str] = field(default_factory=list)
@@ -92,6 +99,14 @@ class TaskUpdate:
     source: str
     source_message_id: Optional[str]
     created_at: str
+    source_group_id: str = ""
+    source_sender_open_id: str = ""
+    source_sender_name: str = ""
+    source_sent_at: str = ""
+    raw_text: str = ""
+    ai_result: Dict[str, Any] = field(default_factory=dict)
+    confidence: Optional[float] = None
+    trace: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -108,7 +123,14 @@ class Standup:
     decisions_needed: List[str]
     submitted_at: str
     source_message_id: Optional[str] = None
+    source_group_id: str = ""
+    source_sender_open_id: str = ""
+    source_sender_name: str = ""
+    source_sent_at: str = ""
     raw_text: str = ""
+    ai_result: Dict[str, Any] = field(default_factory=dict)
+    confidence: Optional[float] = None
+    trace: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

@@ -68,6 +68,14 @@ class JsonStore:
     def save_source_message(self, message: SourceMessage) -> None:
         self._write_json(self.data_dir / "messages" / f"{message.id}.json", to_dict(message))
 
+    def get_source_message(self, message_id: str | None) -> Optional[Dict[str, Any]]:
+        if not message_id:
+            return None
+        path = self.data_dir / "messages" / f"{message_id}.json"
+        if not path.exists():
+            return None
+        return self._read_json(path, None)
+
     def list_source_messages(self) -> List[Dict[str, Any]]:
         return self._list_json("messages")
 
