@@ -11,7 +11,7 @@ from ..models import Member, Mention, SourceMessage
 
 
 SUPPORTED_INTENTS = {"update_task", "create_task", "add_progress", "change_status", "unknown"}
-SUPPORTED_STATUS_ACTIONS = {"接受", "拒绝", "验收通过", "打回", "已完成", "完成了", "阻塞", "阻塞了"}
+SUPPORTED_STATUS_ACTIONS = {"接受", "拒绝", "需要澄清", "验收通过", "打回", "已完成", "完成了", "阻塞", "阻塞了"}
 SUPPORTED_PRIORITIES = {"P0", "P1", "P2", "P3"}
 
 
@@ -95,7 +95,7 @@ class MessageIntentParser:
             "\"confidence\":0.0,"
             "\"task_ref\":{\"task_id\":\"\",\"tapd_story_id\":\"\",\"title\":\"\"},"
             "\"fields\":{\"title\":\"\",\"due_date\":\"YYYY-MM-DD\",\"priority\":\"P0|P1|P2|P3\","
-            "\"owner_open_id\":\"\",\"progress\":\"\",\"status_action\":\"接受|拒绝|验收通过|打回|已完成|阻塞\"},"
+            "\"owner_open_id\":\"\",\"progress\":\"\",\"status_action\":\"接受|拒绝|需要澄清|验收通过|打回|已完成|阻塞\"},"
             "\"needs_clarification\":false,\"clarification\":\"\"}。\n"
             "高置信度只在任务和字段都明确时给出；如果需要确认或任务不明确，needs_clarification=true 并给出中文澄清。"
         )

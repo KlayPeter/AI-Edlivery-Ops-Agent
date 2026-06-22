@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List
 
 from ..adapters.llm import LLMAdapter
@@ -35,6 +35,7 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
     source_messages = store.list_source_messages()
     source_messages_by_id = {item.get("id", ""): item for item in source_messages if item.get("id")}
     all_tasks = store.list_tasks()
+    tasks_by_id = {item.get("id", ""): item for item in all_tasks if item.get("id")}
     group_task_ids = {item.get("id", "") for item in all_tasks if _item_group_id(item, source_messages_by_id) == group_id}
     messages = [
         item
@@ -54,11 +55,23 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
     ]
     classified = _classify_messages(messages, llm)
     progress_updates = updates + classified["progress_updates"]
-    blockers = [item for item in updates if item.get("type") == "blocker"] + classified["blockers"]
+    task_blockers = [
+        _risk_summary_item(item, source_messages_by_id, item_type="blocker")
+        for item in all_tasks
+        if item.get("status") == "blocked"
+        and _blocked_long_enough(item)
+        and _item_group_id(item, source_messages_by_id) == group_id
+    ]
+    blockers = [
+        item
+        for item in updates
+        if item.get("type") == "blocker" and _blocked_long_enough(tasks_by_id.get(item.get("task_id", ""), {}))
+    ] + task_blockers + classified["blockers"]
     risks = [
         _risk_summary_item(item, source_messages_by_id)
         for item in all_tasks
-        if item.get("status") in {"blocked", "overdue"} and _item_group_id(item, source_messages_by_id) == group_id
+        if (item.get("status") == "overdue" or (item.get("status") == "blocked" and _blocked_long_enough(item)))
+        and _item_group_id(item, source_messages_by_id) == group_id
     ]
     risks.extend(classified["risks"])
     highlights = _highlights(tasks, progress_updates, blockers, classified["decisions"], risks, classified["shares"])
@@ -248,7 +261,11 @@ def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter) 
         if not item_type or not message:
             continue
         confidence = _confidence(raw_item.get("confidence"))
+        if confidence < 0.6:
+            continue
         title = _string(raw_item.get("title")) or _compact_title(str(message.get("text", "")))
+        if confidence < 0.85:
+            title = f"可能：{title}"
         ai_result = {
             "type": item_type,
             "parser": "llm_daily_summary",
@@ -324,10 +341,10 @@ def _update_summary_item(update: Dict[str, Any], messages_by_id: Dict[str, Dict[
     return item
 
 
-def _risk_summary_item(task: Dict[str, Any], messages_by_id: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+def _risk_summary_item(task: Dict[str, Any], messages_by_id: Dict[str, Dict[str, Any]], item_type: str = "risk") -> Dict[str, Any]:
     item = _task_summary_item(task, messages_by_id)
-    item["type"] = "risk"
-    item["ai_result"] = {"type": "risk", "parser": "structured_record", "title": item.get("title", "")}
+    item["type"] = item_type
+    item["ai_result"] = {"type": item_type, "parser": "structured_record", "title": item.get("title", "")}
     if item.get("trace"):
         item["trace"]["ai_result"] = item["ai_result"]
     return item
@@ -335,10 +352,29 @@ def _risk_summary_item(task: Dict[str, Any], messages_by_id: Dict[str, Dict[str,
 
 def _source_text(item: Dict[str, Any]) -> str:
     text = item.get("raw_text", "").strip().replace("\n", " ")
-    if text:
-        return text[:30] + ("..." if len(text) > 30 else "")
     ids = [value for value in item.get("source_message_ids", []) if value]
+    if text:
+        clipped = text[:30] + ("..." if len(text) > 30 else "")
+        return f"{clipped}（消息 ID: {'、'.join(ids)}）" if ids else clipped
     return "消息 ID: " + "、".join(ids) if ids else "结构化记录"
+
+
+def _blocked_long_enough(task: Dict[str, Any]) -> bool:
+    if not task or task.get("status") != "blocked":
+        return False
+    blocked_at = _parse_iso_datetime(str(task.get("blocked_at") or ""))
+    if not blocked_at:
+        return False
+    return datetime.utcnow() - blocked_at >= timedelta(hours=24)
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", ""))
+    except ValueError:
+        return None
 
 
 def _has_any(text: str, keywords: tuple[str, ...]) -> bool:
