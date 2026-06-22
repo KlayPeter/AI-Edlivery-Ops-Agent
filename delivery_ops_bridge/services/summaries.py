@@ -34,7 +34,7 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
     date_text = day.isoformat()
     source_messages = store.list_source_messages()
     source_messages_by_id = {item.get("id", ""): item for item in source_messages if item.get("id")}
-    all_tasks = store.list_tasks()
+    all_tasks = [t for t in store.list_tasks() if t.get("status") != "deleted"]
     tasks_by_id = {item.get("id", ""): item for item in all_tasks if item.get("id")}
     group_task_ids = {item.get("id", "") for item in all_tasks if _item_group_id(item, source_messages_by_id) == group_id}
     messages = [
@@ -364,12 +364,8 @@ def _risk_summary_item(task: Dict[str, Any], messages_by_id: Dict[str, Dict[str,
 
 
 def _source_text(item: Dict[str, Any]) -> str:
-    text = item.get("raw_text", "").strip().replace("\n", " ")
-    ids = [value for value in item.get("source_message_ids", []) if value]
-    if text:
-        clipped = text[:30] + ("..." if len(text) > 30 else "")
-        return f"{clipped}（消息 ID: {'、'.join(ids)}）" if ids else clipped
-    return "消息 ID: " + "、".join(ids) if ids else "结构化记录"
+    sender = item.get("source_sender_name") or item.get("sender_name") or item.get("creator_name") or "未知"
+    return f"{sender}在DevCraft创建的"
 
 
 def _blocked_long_enough(task: Dict[str, Any]) -> bool:

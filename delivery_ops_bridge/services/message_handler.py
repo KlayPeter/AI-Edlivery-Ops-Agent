@@ -143,6 +143,10 @@ class MessageHandler:
             if is_explicit:
                 self._reply(message, "group", "抱歉，我没有识别到有效的指令。\n目前支持的操作有：\n- 创建/安排任务\n- 对我回复接受、打回、完成某任务\n- 回复具体进度")
                 return {"handled": True, "action": "unrecognized_command", "reason": command.reason}
+            
+            message.ai_result = {"type": "ignored_group_chat"}
+            message.confidence = 0.0
+            self.store.save_source_message(message)
             return {"handled": False, "reason": "not_directed_at_bot"}
         key = f"{message.id}:create_task"
         if self.store.has_idempotency_key(key):
@@ -558,6 +562,8 @@ class MessageHandler:
             if not tapd_result.ok:
                 self.store.append_audit_log("tapd_update_failed", {"task_id": task_data["id"], "error": tapd_result.error})
                 tapd_error_msg = "\n(⚠️ 注：同步至TAPD状态失败，可能任务已被删除)"
+                if "404" in str(tapd_result.error) or "Not Found" in str(tapd_result.error):
+                    status = "deleted"
         if status == TASK_STATUS_BLOCKED:
             blocked_at = task_data.get("blocked_at") or utc_now_iso()
             task_data["blocked_at"] = blocked_at
