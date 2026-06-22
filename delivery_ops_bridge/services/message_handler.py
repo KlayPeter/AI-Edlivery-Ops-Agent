@@ -33,7 +33,7 @@ from .task_parser import ParsedTaskCommand, has_task_intent, parse_due_date_text
 
 
 TAPD_STATUS_IN_PROGRESS = "status_14"
-TAPD_STATUS_TESTING = "status_4"
+TAPD_STATUS_TESTING = "status_3"
 TAPD_STATUS_DONE = "status_5"
 TAPD_STATUS_CANCELLED = "status_20"
 WORKING_REACTION_MIN_SECONDS = 1.2
