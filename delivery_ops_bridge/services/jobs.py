@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime
-from typing import Dict, List
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List
 
 from ..adapters.llm import LLMAdapter
 from ..adapters.feishu import FeishuAdapter
 from ..config import AppConfig
-from ..models import BotMessageContext, TASK_STATUS_ACCEPTED, TASK_STATUS_CANCELLED, TASK_STATUS_OVERDUE, Task, utc_now_iso
+from ..models import BotMessageContext, TASK_STATUS_ACCEPTED, TASK_STATUS_CANCELLED, TASK_STATUS_OVERDUE, Task, TaskUpdate, utc_now_iso
 from ..storage import JsonStore
 from .dashboard import DashboardService
 from .summaries import build_daily_summary, render_daily_summary
@@ -113,7 +113,8 @@ class ScheduledJobs:
 
     def overdue_scan(self, day: date | None = None) -> Dict[str, int]:
         day = day or date.today()
-        count = 0
+        counts = {"due_tomorrow": 0, "due_today": 0, "overdue_day1": 0, "overdue_risk": 0}
+        risk_items: List[str] = []
         for raw_task in self.store.list_tasks():
             due = raw_task.get("due_date")
             if not due or raw_task.get("status") in {TASK_STATUS_ACCEPTED, TASK_STATUS_CANCELLED}:
@@ -122,13 +123,80 @@ class ScheduledJobs:
                 due_date = date.fromisoformat(due)
             except ValueError:
                 continue
-            if due_date < day:
-                raw_task["status"] = TASK_STATUS_OVERDUE
-                raw_task["updated_at"] = utc_now_iso()
-                self.store.save_task(Task(**raw_task))
-                owner = raw_task.get("primary_owner_open_id", "")
-                self.feishu.send_private_text(owner, f"这个任务已超期，是否需要更新一下当前进展？\n任务：{raw_task.get('title')}\n原截止时间：{due}")
-                count += 1
-        if count:
-            self.feishu.send_group_text(f"以下任务存在延期风险：{count} 个。详情已私聊负责人确认。", self.config.feishu.group_chat_id)
-        return {"overdue": count}
+            days_to_due = (due_date - day).days
+            if days_to_due == 1:
+                if self._send_due_reminder_once(raw_task, day, "due_tomorrow", f"这个任务明天截止，请确认当前进展和风险。\n任务：{raw_task.get('title')}\n截止时间：{due}"):
+                    counts["due_tomorrow"] += 1
+            elif days_to_due == 0:
+                if self._send_due_reminder_once(raw_task, day, "due_today", f"这个任务今天截止，请同步当前进展。\n任务：{raw_task.get('title')}\n截止时间：{due}"):
+                    counts["due_today"] += 1
+            elif days_to_due == -1:
+                changed = self._mark_overdue_if_needed(raw_task, "overdue_day1")
+                if self._send_due_reminder_once(raw_task, day, "overdue_day1", f"这个任务已超期 1 天，是否需要更新一下当前进展？\n任务：{raw_task.get('title')}\n原截止时间：{due}"):
+                    counts["overdue_day1"] += 1
+                if changed:
+                    raw_task["status"] = TASK_STATUS_OVERDUE
+            elif days_to_due <= -2:
+                self._mark_overdue_if_needed(raw_task, "overdue_risk")
+                if self._send_due_reminder_once(raw_task, day, "overdue_risk", f"这个任务已超期超过 2 天，已进入日报和看板风险，请尽快更新进展。\n任务：{raw_task.get('title')}\n原截止时间：{due}"):
+                    counts["overdue_risk"] += 1
+                    owner_text = f"，负责人：{raw_task.get('primary_owner_name', '')}" if self.config.runtime.public_overdue_owners else ""
+                    risk_items.append(f"{len(risk_items) + 1}. {raw_task.get('title')}，原定 {due} 完成{owner_text}，当前仍未完成。")
+        if risk_items:
+            self.feishu.send_group_text("以下任务存在延期风险：\n" + "\n".join(risk_items), self.config.feishu.group_chat_id)
+        return counts
+
+    def _send_due_reminder_once(self, task: Dict[str, Any], day: date, scenario: str, text: str) -> bool:
+        reminders = dict(task.get("overdue_reminders") or {})
+        last_sent = self._parse_iso_datetime(reminders.get(scenario, ""))
+        if last_sent and datetime.utcnow() - last_sent < self._task_reminder_interval():
+            return False
+        owner = task.get("primary_owner_open_id", "")
+        self.feishu.send_private_text(owner, text)
+        reminders[scenario] = utc_now_iso()
+        task["overdue_reminders"] = reminders
+        try:
+            self.store.save_task(Task(**task))
+        except TypeError:
+            pass
+        self.store.append_audit_log("overdue_reminder_sent", {"task_id": task.get("id"), "scenario": scenario, "due_date": task.get("due_date")})
+        return True
+
+    def _mark_overdue_if_needed(self, raw_task: Dict[str, Any], reason: str) -> bool:
+        if raw_task.get("status") == TASK_STATUS_OVERDUE:
+            return False
+        raw_task["status"] = TASK_STATUS_OVERDUE
+        raw_task["updated_at"] = utc_now_iso()
+        task = Task(**raw_task)
+        self.store.save_task(task)
+        update = TaskUpdate(
+            id=f"update-{task.id}-{len(self.store.list_task_updates(task.id)) + 1}",
+            task_id=task.id,
+            user_open_id="system",
+            user_name="系统",
+            update_type="overdue",
+            content=f"任务已超期：{task.due_date}",
+            source="system",
+            source_message_id=None,
+            created_at=utc_now_iso(),
+            metadata={"reason": reason, "due_date": task.due_date},
+        )
+        self.store.save_task_update(update)
+        self.store.append_audit_log("task_status_updated", {"task_id": task.id, "status": TASK_STATUS_OVERDUE, "update_type": "overdue", "reason": reason})
+        return True
+
+    def _task_reminder_interval(self) -> timedelta:
+        raw_value = self.config.schedule.get("task_reminder_frequency_hours", 24)
+        try:
+            hours = float(raw_value)
+        except (TypeError, ValueError):
+            hours = 24
+        return timedelta(hours=max(hours, 1))
+
+    def _parse_iso_datetime(self, value: str) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", ""))
+        except ValueError:
+            return None

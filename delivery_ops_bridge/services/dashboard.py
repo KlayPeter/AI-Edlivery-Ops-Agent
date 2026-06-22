@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import json
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -263,16 +263,19 @@ class DashboardService:
         ]
 
     def _build_blockers(self, tasks: List[Dict[str, Any]], standups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        values = [
-            {
-                "title": task.get("title", ""),
-                "owner": task.get("primary_owner_name", ""),
-                "impact": "任务处于阻塞状态",
-                "action": "确认协助人和下一步恢复动作",
-            }
-            for task in tasks
-            if task.get("status") == "blocked"
-        ]
+        values = []
+        for task in tasks:
+            if task.get("status") != "blocked" or not self._blocked_long_enough(task):
+                continue
+            blocker = task.get("blocker_info") or {}
+            values.append(
+                {
+                    "title": blocker.get("reason") or task.get("title", ""),
+                    "owner": blocker.get("blocked_by_name") or task.get("primary_owner_name", ""),
+                    "impact": "任务阻塞超过 24 小时",
+                    "action": blocker.get("suggested_action") or "确认协助人和下一步恢复动作",
+                }
+            )
         for item in standups:
             for blocker in item.get("blockers", []):
                 values.append(
@@ -294,7 +297,7 @@ class DashboardService:
                 "action": "确认是否需要调整计划或资源",
             }
             for task in tasks
-            if task.get("status") in {"blocked", "overdue"}
+            if task.get("status") == "overdue" or (task.get("status") == "blocked" and self._blocked_long_enough(task))
         ]
         for item in standups:
             for risk in item.get("risks", []):
@@ -315,3 +318,17 @@ class DashboardService:
             "blockers": [blocker for item in standups for blocker in item.get("blockers", [])],
             "decisions_needed": [decision for item in standups for decision in item.get("decisions_needed", [])],
         }
+
+    def _blocked_long_enough(self, task: Dict[str, Any]) -> bool:
+        blocked_at = self._parse_iso_datetime(str(task.get("blocked_at") or ""))
+        if not blocked_at:
+            return False
+        return datetime.utcnow() - blocked_at >= timedelta(hours=24)
+
+    def _parse_iso_datetime(self, value: str) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", ""))
+        except ValueError:
+            return None
