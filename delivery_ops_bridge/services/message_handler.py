@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import date
 from typing import Any, Dict, List, Optional
 
-from ..adapters.feishu import WORKING_REACTION_EMOJI_TYPE, FeishuAdapter, FeishuEventParser
+from ..adapters.feishu import WORKING_REACTION_EMOJI_TYPE, WORKING_REACTION_EMOJI_TYPES, FeishuAdapter, FeishuEventParser
 from ..adapters.tapd import TapdAdapter
 from ..config import AppConfig
 from ..models import (
@@ -26,12 +27,13 @@ from ..models import (
 from ..storage import JsonStore
 from .dashboard import DashboardService
 from .standup import looks_like_standup, parse_standup
-from .task_parser import ParsedTaskCommand, parse_task_command
+from .task_parser import ParsedTaskCommand, parse_due_date_text, parse_task_command
 
 
 TAPD_STATUS_IN_PROGRESS = "status_14"
 TAPD_STATUS_DONE = "status_5"
 TAPD_STATUS_CANCELLED = "status_20"
+WORKING_REACTION_MIN_SECONDS = 1.2
 
 
 class MessageHandler:
@@ -57,8 +59,8 @@ class MessageHandler:
         message = self.parser.parse(payload)
         if message is None:
             return {"handled": False, "reason": "not_message_event"}
-        
-        reaction_id = self.feishu.add_reaction(message.id, WORKING_REACTION_EMOJI_TYPE)
+
+        reaction_id, reaction_started_at = self._add_working_reaction(message)
         try:
             self.store.save_source_message(message)
             self.store.append_audit_log("source_message_received", {
@@ -75,6 +77,10 @@ class MessageHandler:
             return self._handle_private_message(message)
         finally:
             if reaction_id:
+                if not self.feishu.dry_run:
+                    elapsed = time.monotonic() - reaction_started_at
+                    if elapsed < WORKING_REACTION_MIN_SECONDS:
+                        time.sleep(WORKING_REACTION_MIN_SECONDS - elapsed)
                 self.feishu.remove_reaction(message.id, reaction_id)
 
     def _handle_group_message(self, message: SourceMessage) -> Dict[str, Any]:
@@ -245,6 +251,13 @@ class MessageHandler:
             return self._apply_action(message, source, task_data, action, text)
 
         contextual_task = self._contextual_task(message, reply_context, normalized_text=text)
+        due_date = self._parse_due_date_update(text, allow_colon=bool(contextual_task))
+        if due_date and contextual_task:
+            return self._update_task_due_date(message, source, contextual_task, due_date, text)
+        if due_date and not contextual_task:
+            self._reply(message, source, "请引用对应任务消息回复，或直接带上任务ID。")
+            return {"handled": True, "action": "task_context_required"}
+
         context_action = re.match(r"^\s*(接受|拒绝|验收通过|打回)\s*$", text)
         if context_action and contextual_task:
             return self._apply_action(message, source, contextual_task, context_action.group(1), text)
@@ -350,6 +363,27 @@ class MessageHandler:
             self._reply(message, source, f"任务状态已更新：{task.title} -> {status}")
         self.store.append_audit_log("task_status_updated", {"task_id": task.id, "status": status, "update_type": update_type})
         return {"handled": True, "action": update_type, "task_id": task.id, "status": status}
+
+    def _update_task_due_date(
+        self,
+        message: SourceMessage,
+        source: str,
+        task_data: Dict[str, Any],
+        due_date: str,
+        content: str,
+    ) -> Dict[str, Any]:
+        if task_data.get("tapd_story_id"):
+            tapd_result = self.tapd.update_story_due_date(task_data["tapd_story_id"], due_date)
+            if not tapd_result.ok:
+                self.store.append_audit_log("tapd_update_failed", {"task_id": task_data["id"], "error": tapd_result.error})
+        task_data["due_date"] = due_date
+        task_data["updated_at"] = utc_now_iso()
+        task = Task(**task_data)
+        self.store.save_task(task)
+        self._save_update(task, message.sender_open_id, message.sender_name, "due_date_updated", content, source, message.id)
+        self._reply(message, source, f"截止时间已更新：{task.title} -> {due_date}")
+        self.store.append_audit_log("task_due_date_updated", {"task_id": task.id, "due_date": due_date})
+        return {"handled": True, "action": "due_date_updated", "task_id": task.id, "due_date": due_date}
 
     def _save_progress(self, message: SourceMessage, source: str, task_data: Dict[str, Any], content: str) -> Dict[str, Any]:
         task = Task(**task_data)
@@ -460,6 +494,19 @@ class MessageHandler:
         else:
             self.feishu.send_private_text(message.sender_open_id, text)
 
+    def _add_working_reaction(self, message: SourceMessage) -> tuple[str | None, float]:
+        started_at = time.monotonic()
+        errors = []
+        for emoji_type in WORKING_REACTION_EMOJI_TYPES:
+            reaction_id = self.feishu.add_reaction(message.id, emoji_type)
+            if reaction_id:
+                return reaction_id, started_at
+            if self.feishu.last_reaction_error:
+                errors.append({"emoji_type": emoji_type, "error": self.feishu.last_reaction_error})
+        if errors and not self.feishu.dry_run:
+            self.store.append_audit_log("working_reaction_failed", {"message_id": message.id, "errors": errors})
+        return None, started_at
+
     def _find_task_by_title(self, title: str) -> Optional[Dict[str, Any]]:
         for task in self.store.list_tasks():
             if title in task.get("title", "") or task.get("title", "") in title:
@@ -523,6 +570,14 @@ class MessageHandler:
             for name in [item for item in names if item]:
                 text = re.sub(rf"^\s*@?{re.escape(name)}\s*", "", text).strip()
         return text
+
+    def _parse_due_date_update(self, text: str, allow_colon: bool = False) -> Optional[str]:
+        separators = "设置为|改为|调整为|设为|改到|到"
+        if allow_colon:
+            separators = f"{separators}|[:：]"
+        if not re.search(rf"(?:截止时间|截止|完成时间)\s*(?:{separators})", text):
+            return None
+        return parse_due_date_text(text)
 
     def _is_system_noise(self, text: str) -> bool:
         return "<system-reminder>" in text or "<cb_summary>" in text or text.startswith("This is a summary")

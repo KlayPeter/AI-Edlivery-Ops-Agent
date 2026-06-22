@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Optional
 from ..config import FeishuConfig
 from ..models import Mention, SourceMessage, utc_now_iso
 
-WORKING_REACTION_EMOJI_TYPE = "OnIt"
+WORKING_REACTION_EMOJI_TYPES = ("Typing", "OnIt")
+WORKING_REACTION_EMOJI_TYPE = WORKING_REACTION_EMOJI_TYPES[0]
 
 
 @dataclass
@@ -80,6 +81,7 @@ class FeishuAdapter:
     def __init__(self, config: FeishuConfig, dry_run: bool = False):
         self.config = config
         self.dry_run = dry_run
+        self.last_reaction_error: Optional[str] = None
 
     def send_group_text(self, text: str, chat_id: str | None = None) -> SendResult:
         target = chat_id or self.config.group_chat_id
@@ -180,6 +182,7 @@ class FeishuAdapter:
         return self._result_from_process(proc)
 
     def add_reaction(self, message_id: str, emoji_type: str = WORKING_REACTION_EMOJI_TYPE) -> Optional[str]:
+        self.last_reaction_error = None
         if self.dry_run or not message_id:
             return None
         cmd = [
@@ -193,9 +196,14 @@ class FeishuAdapter:
             proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=10)
             if proc.returncode == 0:
                 raw = self._parse_json_output(proc.stdout)
-                return raw.get("data", {}).get("reaction_id") or raw.get("reaction_id")
-        except Exception:
-            pass
+                reaction_id = raw.get("data", {}).get("reaction_id") or raw.get("reaction_id")
+                if reaction_id:
+                    return reaction_id
+                self.last_reaction_error = f"reaction created but no reaction_id returned: {proc.stdout.strip()}"
+                return None
+            self.last_reaction_error = proc.stderr.strip() or proc.stdout.strip() or f"exit code {proc.returncode}"
+        except Exception as exc:
+            self.last_reaction_error = str(exc)
         return None
 
     def remove_reaction(self, message_id: str, reaction_id: str) -> None:

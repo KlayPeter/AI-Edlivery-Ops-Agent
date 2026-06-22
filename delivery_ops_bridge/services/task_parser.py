@@ -31,6 +31,16 @@ TASK_INTENT_KEYWORDS = [
 ]
 
 INDEPENDENT_KEYWORDS = ["每个人", "各自", "分别", "每人", "都要", "各写一份", "每个端", "各模块"]
+WEEKDAY_NAMES = {
+    "一": 0,
+    "二": 1,
+    "三": 2,
+    "四": 3,
+    "五": 4,
+    "六": 5,
+    "日": 6,
+    "天": 6,
+}
 
 
 @dataclass
@@ -131,7 +141,8 @@ def _extract_priority(text: str) -> tuple[str, str]:
     return "P2", "Middle"
 
 
-def _extract_due_date(text: str, today: date) -> Optional[str]:
+def parse_due_date_text(text: str, today: Optional[date] = None) -> Optional[str]:
+    today = today or date.today()
     if "今天" in text or "今晚" in text:
         return today.isoformat()
     if "明天" in text or "明晚" in text:
@@ -143,7 +154,16 @@ def _extract_due_date(text: str, today: date) -> Optional[str]:
     if "本周五" in text or "周五" in text:
         days = (4 - today.weekday()) % 7
         return (today + timedelta(days=days)).isoformat()
+    weekday_match = re.search(r"(?:本周|这周|周)([一二三四五六日天])", text)
+    if weekday_match:
+        target_weekday = WEEKDAY_NAMES[weekday_match.group(1)]
+        days = (target_weekday - today.weekday()) % 7
+        return (today + timedelta(days=days)).isoformat()
     return None
+
+
+def _extract_due_date(text: str, today: date) -> Optional[str]:
+    return parse_due_date_text(text, today)
 
 
 def _extract_acceptance_criteria(text: str) -> List[str]:

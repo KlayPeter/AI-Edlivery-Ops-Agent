@@ -72,6 +72,17 @@ class TapdAdapter:
             return TapdResult(ok=True, raw={"dry_run": True, "payload": payload}, story_id=story_id, url=self.story_url(story_id))
         return self._post("/stories?s=mcp", payload)
 
+    def update_story_due_date(self, story_id: str, due_date: str) -> TapdResult:
+        payload = {
+            "workspace_id": self.config.workspace_id,
+            "id": story_id,
+            "entity_type": "stories",
+            "due": due_date,
+        }
+        if self.dry_run:
+            return TapdResult(ok=True, raw={"dry_run": True, "payload": payload}, story_id=story_id, url=self.story_url(story_id))
+        return self._post("/stories?s=mcp", payload)
+
     def story_url(self, story_id: str) -> str:
         return f"https://www.tapd.cn/{self.config.workspace_id}/prong/stories/view/{story_id}"
 

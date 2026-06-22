@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from delivery_ops_bridge.adapters.feishu import WORKING_REACTION_EMOJI_TYPE, SendResult
 from delivery_ops_bridge.models import BotMessageContext, Task, utc_now_iso
@@ -76,6 +76,43 @@ def test_group_context_required_reply_quotes_source_message(handler):
 
     assert result["action"] == "task_context_required"
     assert replies == [("om_group_accept_without_context", "请引用对应任务消息回复，或直接带上任务ID。")]
+
+
+def test_group_reply_updates_due_date_from_task_context(handler):
+    create_event = feishu_event(
+        "@AI交付助理 @张三 创建任务：负责任务完成前端页面渲染",
+        mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+        message_id="om_create_due_change",
+    )
+    created = handler.handle_event(create_event)
+    handler.store.save_bot_message_context(
+        BotMessageContext(
+            message_id="om_bot_created_due_change",
+            context_type="task_group_notice",
+            created_at=utc_now_iso(),
+            chat_id="oc_group",
+            task_id=created["task_id"],
+            task_title="负责任务完成前端页面渲染",
+            metadata={"tapd_story_id": created["tapd_story_id"]},
+        )
+    )
+    replies = []
+    handler.feishu.send_reply_text = lambda message_id, text: replies.append((message_id, text)) or SendResult(ok=True, raw={})
+    expected_due = (date.today() + timedelta(days=(2 - date.today().weekday()) % 7)).isoformat()
+
+    result = handler.handle_event(
+        feishu_event(
+            "@AI交付助理 截止时间设置为本周三",
+            mentions=[mention("ou_bot", "AI交付助理")],
+            message_id="om_due_change",
+            parent_id="om_bot_created_due_change",
+        )
+    )
+
+    assert result["action"] == "due_date_updated"
+    assert result["due_date"] == expected_due
+    assert handler.store.get_task(created["task_id"])["due_date"] == expected_due
+    assert replies == [("om_due_change", f"截止时间已更新：负责任务完成前端页面渲染 -> {expected_due}")]
 
 
 def test_plain_chat_does_not_create_task(handler):
