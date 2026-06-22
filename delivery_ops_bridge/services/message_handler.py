@@ -515,9 +515,9 @@ class MessageHandler:
                     return self._save_progress(message, source, task_data, content)
 
         if contextual_task:
-            if re.match(r"^\s*(?:这个)?(?:该)?(?:任务)?\s*(已完成|完成了)\s*$", text):
+            if re.search(r"(已完成|完成了)", text) and not re.search(r"(没|不|未)完成", text):
                 return self._set_task_status(message, source, contextual_task, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", text, TAPD_STATUS_TESTING)
-            if re.match(r"^\s*(?:这个)?(?:该)?(?:任务)?\s*(阻塞|阻塞了)(?:[:：].+)?$", text):
+            if re.search(r"(阻塞|阻塞了)", text) and not re.search(r"(不|没|未)阻塞", text):
                 return self._set_task_status(message, source, contextual_task, TASK_STATUS_BLOCKED, "blocked", text, TAPD_STATUS_BLOCKED)
             if text.startswith("进度") or reply_context and reply_context.get("context_type") == "task_confirmation":
                 return self._save_progress(message, source, contextual_task, text)
@@ -1295,9 +1295,15 @@ class MessageHandler:
             if task:
                 return task
 
-        exact_actions = {"接受", "拒绝", "需要澄清", "验收通过", "打回", "已完成", "完成了", "阻塞", "阻塞了"}
         normalized = (normalized_text if normalized_text is not None else message.text).strip().splitlines()[0].strip()
-        if normalized not in exact_actions and not normalized.startswith("进度"):
+        
+        has_intent = (
+            re.search(r"^(接受|拒绝|需要澄清|验收通过|打回)$", normalized) or
+            (re.search(r"(已完成|完成了)", normalized) and not re.search(r"(没|不|未)完成", normalized)) or
+            (re.search(r"(阻塞|阻塞了)", normalized) and not re.search(r"(不|没|未)阻塞", normalized)) or
+            normalized.startswith("进度")
+        )
+        if not has_intent:
             return None
 
         candidates = []
