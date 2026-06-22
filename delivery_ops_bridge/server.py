@@ -31,6 +31,7 @@ def build_handler(config_path: str | None = None, dry_run: bool = False) -> Mess
     config = load_config(config_path)
     store = JsonStore(config.data_path)
     feishu = FeishuAdapter(config.feishu, dry_run=dry_run)
+    feishu.set_audit_callback(store.append_audit_log)
     tapd = TapdAdapter(config.tapd, dry_run=dry_run)
     llm = LLMAdapter(config.ai, dry_run=dry_run)
     intent_parser = MessageIntentParser(llm)

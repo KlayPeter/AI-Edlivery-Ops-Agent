@@ -76,3 +76,28 @@ def test_send_reply_text_requires_message_id(config_path):
 
     assert result.ok is False
     assert "message_id" in (result.error or "")
+
+
+def test_send_text_records_audit_event(config_path):
+    config = load_config(str(config_path))
+    adapter = FeishuAdapter(config.feishu, dry_run=True)
+    events = []
+    adapter.set_audit_callback(lambda event_type, payload: events.append((event_type, payload)))
+
+    result = adapter.send_group_text("日报已生成", "oc_group")
+
+    assert result.ok is True
+    assert events == [
+        (
+            "bot_message_sent",
+            {
+                "channel": "group",
+                "target": "oc_group",
+                "ok": True,
+                "message_id": None,
+                "chat_id": None,
+                "error": None,
+                "text_preview": "日报已生成",
+            },
+        )
+    ]

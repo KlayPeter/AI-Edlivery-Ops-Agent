@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from ..config import FeishuConfig
 from ..models import Mention, SourceMessage, utc_now_iso
@@ -104,29 +105,38 @@ class FeishuAdapter:
         self.config = config
         self.dry_run = dry_run
         self.last_reaction_error: Optional[str] = None
+        self.audit_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None
+
+    def set_audit_callback(self, callback: Callable[[str, Dict[str, Any]], None]) -> None:
+        self.audit_callback = callback
 
     def send_group_text(self, text: str, chat_id: str | None = None) -> SendResult:
         target = chat_id or self.config.group_chat_id
-        return self._send(["--chat-id", target], text)
+        result = self._send(["--chat-id", target], text)
+        self._audit_send("group", target, text, result)
+        return result
 
     def send_private_text(self, open_id: str, text: str) -> SendResult:
-        return self._send(["--user-id", open_id], text)
+        result = self._send(["--user-id", open_id], text)
+        self._audit_send("private", open_id, text, result)
+        return result
 
     def send_reply_text(self, message_id: str, text: str) -> SendResult:
         if not message_id:
-            return SendResult(ok=False, raw={}, error="message_id is required for reply")
-        return self._send_reply(message_id, text)
+            result = SendResult(ok=False, raw={}, error="message_id is required for reply")
+            self._audit_send("reply", message_id, text, result)
+            return result
+        result = self._send_reply(message_id, text)
+        self._audit_send("reply", message_id, text, result)
+        return result
 
     def upload_file(self, file_path: str) -> SendResult:
         if self.dry_run:
             return SendResult(ok=True, raw={"dry_run": True, "file_path": file_path}, url=file_path)
         path = Path(file_path).expanduser().resolve()
         try:
-            proc = subprocess.run(
+            proc = self._run_with_retry(
                 [self.config.lark_cli_path, "drive", "+upload", "--as", "bot", "--file", f"./{path.name}"],
-                check=False,
-                capture_output=True,
-                text=True,
                 timeout=120,
                 cwd=str(path.parent),
             )
@@ -175,7 +185,7 @@ class FeishuAdapter:
             text,
         ]
         try:
-            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=60)
+            proc = self._run_with_retry(cmd, timeout=60)
         except Exception as exc:
             return SendResult(ok=False, raw={}, error=str(exc))
         return self._result_from_process(proc)
@@ -198,7 +208,7 @@ class FeishuAdapter:
             text,
         ]
         try:
-            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=60)
+            proc = self._run_with_retry(cmd, timeout=60)
         except Exception as exc:
             return SendResult(ok=False, raw={}, error=str(exc))
         return self._result_from_process(proc)
@@ -272,10 +282,39 @@ class FeishuAdapter:
             "--yes",
         ]
         try:
-            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=60)
+            proc = self._run_with_retry(cmd, timeout=60)
         except Exception as exc:
             return SendResult(ok=False, raw={}, error=str(exc))
         return self._result_from_process(proc)
+
+    def _run_with_retry(self, cmd: List[str], timeout: int, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        attempts = max(1, int(getattr(self.config, "send_retry_count", 1)) + 1)
+        last_proc: subprocess.CompletedProcess[str] | None = None
+        for attempt in range(attempts):
+            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=timeout, cwd=cwd)
+            last_proc = proc
+            if proc.returncode == 0 or attempt == attempts - 1:
+                return proc
+            time.sleep(min(2 ** attempt, 5))
+        assert last_proc is not None
+        return last_proc
+
+    def _audit_send(self, channel: str, target: str, text: str, result: SendResult) -> None:
+        if not self.audit_callback:
+            return
+        payload = {
+            "channel": channel,
+            "target": target,
+            "ok": result.ok,
+            "message_id": result.message_id,
+            "chat_id": result.chat_id,
+            "error": result.error,
+            "text_preview": text[:200],
+        }
+        try:
+            self.audit_callback("bot_message_sent", payload)
+        except Exception:
+            pass
 
     def _result_from_process(self, proc: subprocess.CompletedProcess[str]) -> SendResult:
         raw: Dict[str, Any] = {}

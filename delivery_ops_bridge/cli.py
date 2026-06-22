@@ -58,6 +58,7 @@ def _run_job(config_path: str | None, dry_run: bool, name: str, day_text: str | 
         
     store = JsonStore(config.data_path)
     feishu = FeishuAdapter(config.feishu, dry_run=dry_run)
+    feishu.set_audit_callback(store.append_audit_log)
     llm = LLMAdapter(config.ai, dry_run=dry_run)
     dashboard = DashboardService(store, config.data_path, config.project.name, config.feishu.group_name, config.runtime.public_base_url)
     jobs = ScheduledJobs(config, store, feishu, dashboard, llm)

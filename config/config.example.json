@@ -11,7 +11,8 @@
     "group_chat_id": "oc_c6f9a8a03198c9f24e894517d7a622e1",
     "group_name": "研发群",
     "lark_cli_path": "lark-cli",
-    "verify_token": ""
+    "verify_token": "",
+    "send_retry_count": 1
   },
   "tapd": {
     "workspace_id": 52052188,
@@ -25,7 +26,8 @@
     "api_key": "",
     "model": "gpt-4o",
     "max_tokens": 4096,
-    "temperature": 0.2
+    "temperature": 0.2,
+    "retry_count": 1
   },
   "runtime": {
     "data_dir": "data",
@@ -47,6 +49,7 @@
     "standup_summary": "11:10",
     "overdue_scan": "10:00",
     "daily_summary": "18:30",
-    "dashboard": "18:40"
+    "dashboard": "18:40",
+    "task_reminder_frequency_hours": 24
   }
 }

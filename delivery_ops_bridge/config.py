@@ -25,6 +25,7 @@ class FeishuConfig:
     group_name: str
     lark_cli_path: str = "lark-cli"
     verify_token: str = ""
+    send_retry_count: int = 1
 
 
 @dataclass
@@ -43,6 +44,7 @@ class AIConfig:
     model: str = "gpt-4o"
     max_tokens: int = 4096
     temperature: float = 0.2
+    retry_count: int = 1
 
 
 @dataclass
@@ -120,6 +122,7 @@ def build_config(raw: Dict[str, Any], raw_path: Path | None = None) -> AppConfig
         group_name=feishu_raw.get("group_name", "研发群"),
         lark_cli_path=feishu_raw.get("lark_cli_path", "lark-cli"),
         verify_token=feishu_raw.get("verify_token", ""),
+        send_retry_count=max(0, int(feishu_raw.get("send_retry_count", 1))),
     )
 
     tapd_raw = raw.get("tapd", {})
@@ -138,6 +141,7 @@ def build_config(raw: Dict[str, Any], raw_path: Path | None = None) -> AppConfig
         model=_env_override(ai_raw.get("model", "gpt-4o"), "AI_MODEL"),
         max_tokens=int(os.environ.get("AI_MAX_TOKENS", ai_raw.get("max_tokens", 4096))),
         temperature=float(os.environ.get("AI_TEMPERATURE", ai_raw.get("temperature", 0.2))),
+        retry_count=max(0, int(os.environ.get("AI_RETRY_COUNT", ai_raw.get("retry_count", 1)))),
     )
 
     runtime = RuntimeConfig(**raw.get("runtime", {}))

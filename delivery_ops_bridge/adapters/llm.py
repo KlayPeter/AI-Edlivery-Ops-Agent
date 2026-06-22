@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List
 from urllib.error import HTTPError, URLError
@@ -43,16 +44,25 @@ class LLMAdapter:
             },
             method="POST",
         )
-        try:
-            resp = urlopen(req, timeout=120)
-            raw = json.loads(resp.read().decode("utf-8"))
-            content = raw["choices"][0]["message"]["content"]
-            return LLMResult(ok=True, content=content, raw=raw)
-        except HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            return LLMResult(ok=False, error=f"HTTP {exc.code}: {body}")
-        except (URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
-            return LLMResult(ok=False, error=str(exc))
+        attempts = max(1, int(getattr(self.config, "retry_count", 1)) + 1)
+        last_error = ""
+        for attempt in range(attempts):
+            try:
+                resp = urlopen(req, timeout=120)
+                raw = json.loads(resp.read().decode("utf-8"))
+                content = raw["choices"][0]["message"]["content"]
+                return LLMResult(ok=True, content=content, raw=raw)
+            except HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")
+                last_error = f"HTTP {exc.code}: {body}"
+                if exc.code < 500 or attempt == attempts - 1:
+                    return LLMResult(ok=False, error=last_error)
+            except (URLError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
+                last_error = str(exc)
+                if attempt == attempts - 1:
+                    return LLMResult(ok=False, error=last_error)
+            time.sleep(min(2 ** attempt, 5))
+        return LLMResult(ok=False, error=last_error or "llm_error")
 
     def summarize(self, items: List[Dict[str, Any]], task: str) -> LLMResult:
         system = "你是研发交付中台的摘要助手。只输出可直接发送到飞书群的中文纯文本。"
