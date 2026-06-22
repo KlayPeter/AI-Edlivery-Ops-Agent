@@ -26,6 +26,7 @@ from ..models import (
 )
 from ..storage import JsonStore
 from .dashboard import DashboardService
+from .message_intent import IntentFields, MessageIntent, MessageIntentParser
 from .standup import looks_like_standup, parse_standup
 from .task_parser import ParsedTaskCommand, parse_due_date_text, parse_task_command
 
@@ -34,6 +35,8 @@ TAPD_STATUS_IN_PROGRESS = "status_14"
 TAPD_STATUS_DONE = "status_5"
 TAPD_STATUS_CANCELLED = "status_20"
 WORKING_REACTION_MIN_SECONDS = 1.2
+AI_CONFIDENCE_THRESHOLD = 0.8
+PRIORITY_TO_TAPD_LABEL = {"P0": "High", "P1": "High", "P2": "Middle", "P3": "Low"}
 
 
 class MessageHandler:
@@ -44,12 +47,14 @@ class MessageHandler:
         feishu: FeishuAdapter,
         tapd: TapdAdapter,
         dashboard: DashboardService,
+        intent_parser: MessageIntentParser | None = None,
     ):
         self.config = config
         self.store = store
         self.feishu = feishu
         self.tapd = tapd
         self.dashboard = dashboard
+        self.intent_parser = intent_parser
         self.parser = FeishuEventParser(
             bot_open_id=config.feishu.bot_open_id,
             known_names={member.open_id: member.name for member in config.members},
@@ -111,6 +116,9 @@ class MessageHandler:
 
         command = parse_task_command(message.text, message.mentions, self.config.feishu.bot_open_id)
         if not command.should_create:
+            ai_result = self._maybe_handle_ai_intent(message, "group", reply_context)
+            if ai_result:
+                return ai_result
             return {"handled": False, "reason": command.reason}
         key = f"{message.id}:create_task"
         if self.store.has_idempotency_key(key):
@@ -134,6 +142,9 @@ class MessageHandler:
         status_result = self._maybe_handle_status_update(message, source="private", reply_context=reply_context)
         if status_result:
             return status_result
+        ai_result = self._maybe_handle_ai_intent(message, "private", reply_context)
+        if ai_result:
+            return ai_result
         return {"handled": False, "reason": "no_private_command"}
 
     def _create_task_from_command(self, message: SourceMessage, command: ParsedTaskCommand) -> Dict[str, Any]:
@@ -340,6 +351,8 @@ class MessageHandler:
                         metadata={"tapd_story_id": task.tapd_story_id or ""},
                     )
                 )
+            if source == "private" and task.source_message_id:
+                self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 已接受任务：{task.title}")
         elif update_type == "owner_marked_done":
             text = f"{task.primary_owner_name} 已标记任务完成，等待创建人验收：{task.title}\n可直接引用本消息回复：验收通过 / 打回"
             target_chat_id = message.chat_id if source == "group" else self.config.feishu.group_chat_id
@@ -361,8 +374,69 @@ class MessageHandler:
                 )
         else:
             self._reply(message, source, f"任务状态已更新：{task.title} -> {status}")
+            if source == "private" and task.source_message_id:
+                action_text = content.strip() if content.strip() else status
+                self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 更新了任务状态：{status}\n回复内容：{action_text}")
         self.store.append_audit_log("task_status_updated", {"task_id": task.id, "status": status, "update_type": update_type})
         return {"handled": True, "action": update_type, "task_id": task.id, "status": status}
+
+    def _maybe_handle_ai_intent(
+        self,
+        message: SourceMessage,
+        source: str,
+        reply_context: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not self.intent_parser or not self._should_consider_ai(message, source, reply_context):
+            return None
+
+        contextual_task = self._task_from_reply_context(reply_context)
+        intent = self.intent_parser.parse(message, reply_context, contextual_task, self.config.members)
+        if not intent.available:
+            return None
+        if intent.needs_clarification or intent.confidence < AI_CONFIDENCE_THRESHOLD:
+            if intent.clarification:
+                self._reply(message, source, intent.clarification)
+                self._audit_ai_intent(message, intent, executed=False, reason="clarification")
+                return {"handled": True, "action": "ai_clarification", "intent": intent.intent}
+            self._audit_ai_intent(message, intent, executed=False, reason="low_confidence")
+            return None
+
+        task_data = self._resolve_ai_task(intent, contextual_task)
+        result: Optional[Dict[str, Any]] = None
+        reason = ""
+        if intent.intent == "update_task":
+            if not task_data:
+                result = self._ai_clarification(message, source, intent, "请引用对应任务消息回复，或直接带上任务ID。", "task_context_required")
+                reason = "missing_task"
+            else:
+                result = self._update_task_fields(message, source, task_data, intent.fields)
+                reason = result.get("action", "") if result else "no_fields"
+        elif intent.intent == "add_progress":
+            if not task_data:
+                result = self._ai_clarification(message, source, intent, "请引用对应任务消息回复，或直接带上任务ID。", "task_context_required")
+                reason = "missing_task"
+            else:
+                progress = intent.fields.progress or self._strip_bot_mention(message).strip()
+                result = self._save_progress(message, source, task_data, progress)
+                reason = "progress_saved"
+        elif intent.intent == "change_status":
+            if not task_data:
+                result = self._ai_clarification(message, source, intent, "请引用对应任务消息回复，或直接带上任务ID。", "task_context_required")
+                reason = "missing_task"
+            else:
+                result = self._apply_ai_status_action(message, source, task_data, intent.fields.status_action)
+                reason = result.get("action", "") if result else "unsupported_status_action"
+        elif intent.intent == "create_task":
+            result = self._create_task_from_ai_intent(message, intent)
+            reason = result.get("action", "") if result else "missing_create_fields"
+        elif intent.intent == "unknown":
+            reason = "unknown"
+
+        if result:
+            self._audit_ai_intent(message, intent, executed=result.get("handled", False), reason=reason)
+            return result
+        self._audit_ai_intent(message, intent, executed=False, reason=reason or "not_executed")
+        return None
 
     def _update_task_due_date(
         self,
@@ -382,14 +456,117 @@ class MessageHandler:
         self.store.save_task(task)
         self._save_update(task, message.sender_open_id, message.sender_name, "due_date_updated", content, source, message.id)
         self._reply(message, source, f"截止时间已更新：{task.title} -> {due_date}")
+        if source == "private" and task.source_message_id:
+            self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 更新了任务截止时间为：{due_date}")
         self.store.append_audit_log("task_due_date_updated", {"task_id": task.id, "due_date": due_date})
         return {"handled": True, "action": "due_date_updated", "task_id": task.id, "due_date": due_date}
+
+    def _update_task_fields(
+        self,
+        message: SourceMessage,
+        source: str,
+        task_data: Dict[str, Any],
+        fields: IntentFields,
+    ) -> Optional[Dict[str, Any]]:
+        changes = []
+        if fields.due_date:
+            try:
+                date.fromisoformat(fields.due_date)
+            except ValueError:
+                self._reply(message, source, "截止时间格式不明确，请换成 YYYY-MM-DD 或明确的日期。")
+                return {"handled": True, "action": "ai_clarification", "reason": "invalid_due_date"}
+            if task_data.get("tapd_story_id"):
+                tapd_result = self.tapd.update_story_due_date(task_data["tapd_story_id"], fields.due_date)
+                if not tapd_result.ok:
+                    self.store.append_audit_log("tapd_update_failed", {"task_id": task_data["id"], "error": tapd_result.error})
+            task_data["due_date"] = fields.due_date
+            changes.append(f"截止时间：{fields.due_date}")
+
+        if fields.priority:
+            priority_label = PRIORITY_TO_TAPD_LABEL.get(fields.priority)
+            if not priority_label:
+                self._reply(message, source, "优先级只支持 P0/P1/P2/P3。")
+                return {"handled": True, "action": "ai_clarification", "reason": "invalid_priority"}
+            if task_data.get("tapd_story_id"):
+                tapd_result = self.tapd.update_story_priority(task_data["tapd_story_id"], priority_label)
+                if not tapd_result.ok:
+                    self.store.append_audit_log("tapd_update_failed", {"task_id": task_data["id"], "error": tapd_result.error})
+            task_data["priority"] = fields.priority
+            changes.append(f"优先级：{fields.priority}")
+
+        if fields.owner_open_id:
+            owner = self.config.member_by_open_id(fields.owner_open_id)
+            if not owner:
+                self._reply(message, source, "没有找到要变更的负责人，请重新 @ 对应成员。")
+                return {"handled": True, "action": "ai_clarification", "reason": "owner_not_found"}
+            if task_data.get("tapd_story_id"):
+                tapd_result = self.tapd.update_story_owner(task_data["tapd_story_id"], owner.name)
+                if not tapd_result.ok:
+                    self.store.append_audit_log("tapd_update_failed", {"task_id": task_data["id"], "error": tapd_result.error})
+            task_data["primary_owner_open_id"] = owner.open_id
+            task_data["primary_owner_name"] = owner.name
+            if owner.open_id not in task_data.get("assignee_open_ids", []):
+                task_data.setdefault("assignee_open_ids", []).append(owner.open_id)
+                task_data.setdefault("assignee_names", []).append(owner.name)
+            changes.append(f"负责人：{owner.name}")
+
+        if not changes:
+            self._reply(message, source, "我理解是要修改任务，但没有识别到可更新的字段。")
+            return {"handled": True, "action": "ai_clarification", "reason": "empty_update_fields"}
+
+        task_data["updated_at"] = utc_now_iso()
+        task = Task(**task_data)
+        self.store.save_task(task)
+        content = "；".join(changes)
+        self._save_update(task, message.sender_open_id, message.sender_name, "ai_task_updated", content, source, message.id)
+        self._reply(message, source, f"已更新任务：{task.title}\n{content}")
+        if source == "private" and task.source_message_id:
+            self.feishu.send_reply_text(task.source_message_id, f"{message.sender_name} 更新了任务：{task.title}\n{content}")
+        self.store.append_audit_log("task_ai_updated", {"task_id": task.id, "changes": changes})
+        return {"handled": True, "action": "ai_task_updated", "task_id": task.id, "changes": changes}
 
     def _save_progress(self, message: SourceMessage, source: str, task_data: Dict[str, Any], content: str) -> Dict[str, Any]:
         task = Task(**task_data)
         self._save_update(task, message.sender_open_id, message.sender_name, "progress", content, source, message.id)
         self._reply(message, source, f"已记录任务进度：{task.title}")
+        if source == "private" and task.source_message_id:
+            self.feishu.send_reply_text(task.source_message_id, f"负责人 {message.sender_name} 更新了任务进度：\n{content}")
         return {"handled": True, "action": "progress_saved", "task_id": task.id}
+
+    def _apply_ai_status_action(
+        self,
+        message: SourceMessage,
+        source: str,
+        task_data: Dict[str, Any],
+        action: str,
+    ) -> Optional[Dict[str, Any]]:
+        if action in {"接受", "拒绝", "验收通过", "打回"}:
+            return self._apply_action(message, source, task_data, action, action)
+        if action in {"已完成", "完成了"}:
+            return self._set_task_status(message, source, task_data, TASK_STATUS_OWNER_MARKED_DONE, "owner_marked_done", action, None)
+        if action in {"阻塞", "阻塞了"}:
+            return self._set_task_status(message, source, task_data, TASK_STATUS_BLOCKED, "blocked", action, None)
+        self._reply(message, source, "我理解是要更新任务状态，但没有识别到支持的状态动作。")
+        return {"handled": True, "action": "ai_clarification", "reason": "unsupported_status_action"}
+
+    def _create_task_from_ai_intent(self, message: SourceMessage, intent: MessageIntent) -> Optional[Dict[str, Any]]:
+        owner = self.config.member_by_open_id(intent.fields.owner_open_id)
+        title = intent.fields.title or intent.task_ref.title
+        if not owner or not title:
+            self._reply(message, message.chat_type, intent.clarification or "请补充任务标题和负责人。")
+            return {"handled": True, "action": "ai_clarification", "reason": "missing_create_fields"}
+        priority = intent.fields.priority or "P2"
+        command = ParsedTaskCommand(
+            should_create=True,
+            reason="ai_intent",
+            title=title,
+            primary_owner=Mention(open_id=owner.open_id, name=owner.name),
+            assignees=[Mention(open_id=owner.open_id, name=owner.name)],
+            priority=priority,
+            tapd_priority_label=PRIORITY_TO_TAPD_LABEL.get(priority, "Middle"),
+            due_date=intent.fields.due_date or None,
+        )
+        return self._create_task_from_command(message, command)
 
     def _build_task(
         self,
@@ -493,6 +670,82 @@ class MessageHandler:
             self.feishu.send_reply_text(message.id, text)
         else:
             self.feishu.send_private_text(message.sender_open_id, text)
+
+    def _ai_clarification(
+        self,
+        message: SourceMessage,
+        source: str,
+        intent: MessageIntent,
+        fallback: str,
+        action: str,
+    ) -> Dict[str, Any]:
+        self._reply(message, source, intent.clarification or fallback)
+        return {"handled": True, "action": action, "intent": intent.intent}
+
+    def _should_consider_ai(self, message: SourceMessage, source: str, reply_context: Optional[Dict[str, Any]]) -> bool:
+        if source == "private":
+            return True
+        if reply_context:
+            return True
+        return any(item.open_id == self.config.feishu.bot_open_id for item in message.mentions)
+
+    def _task_from_reply_context(self, reply_context: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if reply_context and reply_context.get("task_id"):
+            return self.store.get_task(reply_context["task_id"])
+        return None
+
+    def _resolve_ai_task(self, intent: MessageIntent, contextual_task: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if contextual_task:
+            return contextual_task
+        if intent.task_ref.task_id:
+            task = self.store.get_task(intent.task_ref.task_id)
+            if task:
+                return task
+        if intent.task_ref.tapd_story_id:
+            task = self.store.find_task(intent.task_ref.tapd_story_id)
+            if task:
+                return task
+        if intent.task_ref.title:
+            return self._find_unique_task_by_title(intent.task_ref.title)
+        return None
+
+    def _find_unique_task_by_title(self, title: str) -> Optional[Dict[str, Any]]:
+        candidates = []
+        for task in self.store.list_tasks():
+            task_title = task.get("title", "")
+            if title == task_title or title in task_title or task_title in title:
+                candidates.append(task)
+        return candidates[0] if len(candidates) == 1 else None
+
+    def _audit_ai_intent(self, message: SourceMessage, intent: MessageIntent, executed: bool, reason: str) -> None:
+        fields = {
+            key: value
+            for key, value in {
+                "title": intent.fields.title,
+                "due_date": intent.fields.due_date,
+                "priority": intent.fields.priority,
+                "owner_open_id": intent.fields.owner_open_id,
+                "progress": intent.fields.progress,
+                "status_action": intent.fields.status_action,
+            }.items()
+            if value
+        }
+        self.store.append_audit_log(
+            "ai_intent_parsed",
+            {
+                "message_id": message.id,
+                "intent": intent.intent,
+                "confidence": intent.confidence,
+                "executed": executed,
+                "reason": reason,
+                "task_ref": {
+                    "task_id": intent.task_ref.task_id,
+                    "tapd_story_id": intent.task_ref.tapd_story_id,
+                    "title": intent.task_ref.title,
+                },
+                "fields": fields,
+            },
+        )
 
     def _add_working_reaction(self, message: SourceMessage) -> tuple[str | None, float]:
         started_at = time.monotonic()

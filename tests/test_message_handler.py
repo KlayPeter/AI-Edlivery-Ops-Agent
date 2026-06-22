@@ -4,7 +4,18 @@ from datetime import date, timedelta
 
 from delivery_ops_bridge.adapters.feishu import WORKING_REACTION_EMOJI_TYPE, SendResult
 from delivery_ops_bridge.models import BotMessageContext, Task, utc_now_iso
+from delivery_ops_bridge.services.message_intent import IntentFields, IntentTaskRef, MessageIntent
 from tests.conftest import feishu_event, mention
+
+
+class FakeIntentParser:
+    def __init__(self, intent: MessageIntent):
+        self.intent = intent
+        self.calls = []
+
+    def parse(self, message, reply_context, task_context, members):
+        self.calls.append((message, reply_context, task_context, members))
+        return self.intent
 
 
 def test_url_like_task_create_creates_tapd_story_and_task(handler):
@@ -21,6 +32,20 @@ def test_url_like_task_create_creates_tapd_story_and_task(handler):
     assert tasks[0]["primary_owner_open_id"] == "ou_zhangsan"
     assert tasks[0]["priority"] == "P1"
     assert tasks[0]["tapd_story_id"].startswith("dry-")
+
+
+def test_rule_matched_task_create_does_not_call_ai(handler):
+    parser = FakeIntentParser(MessageIntent(intent="unknown", confidence=1.0))
+    handler.intent_parser = parser
+    event = feishu_event(
+        "@AI交付助理 @张三 创建任务：完成登录接口错误码统一",
+        mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+    )
+
+    result = handler.handle_event(event)
+
+    assert result["action"] == "task_created"
+    assert parser.calls == []
 
 
 def test_working_reaction_uses_on_it_emoji(handler):
@@ -113,6 +138,98 @@ def test_group_reply_updates_due_date_from_task_context(handler):
     assert result["due_date"] == expected_due
     assert handler.store.get_task(created["task_id"])["due_date"] == expected_due
     assert replies == [("om_due_change", f"截止时间已更新：负责任务完成前端页面渲染 -> {expected_due}")]
+
+
+def test_ai_high_confidence_updates_priority_from_task_context(handler):
+    create_event = feishu_event(
+        "@AI交付助理 @张三 创建任务：完成登录接口错误码统一",
+        mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+        message_id="om_ai_priority_create",
+    )
+    created = handler.handle_event(create_event)
+    handler.store.save_bot_message_context(
+        BotMessageContext(
+            message_id="om_bot_ai_priority",
+            context_type="task_group_notice",
+            created_at=utc_now_iso(),
+            chat_id="oc_group",
+            task_id=created["task_id"],
+            task_title="完成登录接口错误码统一",
+            metadata={"tapd_story_id": created["tapd_story_id"]},
+        )
+    )
+    handler.intent_parser = FakeIntentParser(
+        MessageIntent(intent="update_task", confidence=0.92, fields=IntentFields(priority="P1"))
+    )
+    replies = []
+    handler.feishu.send_reply_text = lambda message_id, text: replies.append((message_id, text)) or SendResult(ok=True, raw={})
+
+    result = handler.handle_event(
+        feishu_event(
+            "@AI交付助理 优先级拉到 P1",
+            mentions=[mention("ou_bot", "AI交付助理")],
+            message_id="om_ai_priority",
+            parent_id="om_bot_ai_priority",
+        )
+    )
+
+    assert result["action"] == "ai_task_updated"
+    assert handler.store.get_task(created["task_id"])["priority"] == "P1"
+    assert replies == [("om_ai_priority", "已更新任务：完成登录接口错误码统一\n优先级：P1")]
+
+
+def test_ai_low_confidence_replies_clarification_without_update(handler):
+    create_event = feishu_event(
+        "@AI交付助理 @张三 创建任务：完成登录接口错误码统一",
+        mentions=[mention("ou_bot", "AI交付助理"), mention("ou_zhangsan", "张三")],
+        message_id="om_ai_low_create",
+    )
+    created = handler.handle_event(create_event)
+    handler.store.save_bot_message_context(
+        BotMessageContext(
+            message_id="om_bot_ai_low",
+            context_type="task_group_notice",
+            created_at=utc_now_iso(),
+            chat_id="oc_group",
+            task_id=created["task_id"],
+            task_title="完成登录接口错误码统一",
+        )
+    )
+    handler.intent_parser = FakeIntentParser(
+        MessageIntent(
+            intent="update_task",
+            confidence=0.4,
+            fields=IntentFields(priority="P1"),
+            needs_clarification=True,
+            clarification="我没理解要改哪个字段，请说清楚一点。",
+        )
+    )
+    replies = []
+    handler.feishu.send_reply_text = lambda message_id, text: replies.append((message_id, text)) or SendResult(ok=True, raw={})
+
+    result = handler.handle_event(
+        feishu_event("@AI交付助理 改一下", mentions=[mention("ou_bot", "AI交付助理")], message_id="om_ai_low", parent_id="om_bot_ai_low")
+    )
+
+    assert result["action"] == "ai_clarification"
+    assert handler.store.get_task(created["task_id"])["priority"] == "P2"
+    assert replies == [("om_ai_low", "我没理解要改哪个字段，请说清楚一点。")]
+
+
+def test_ai_missing_task_context_does_not_execute(handler):
+    handler.intent_parser = FakeIntentParser(
+        MessageIntent(intent="update_task", confidence=0.94, task_ref=IntentTaskRef(title="不存在的任务"), fields=IntentFields(priority="P1"))
+    )
+    replies = []
+    handler.feishu.send_reply_text = lambda message_id, text: replies.append((message_id, text)) or SendResult(ok=True, raw={})
+
+    result = handler.handle_event(
+        feishu_event("@AI交付助理 优先级调成 P1", mentions=[mention("ou_bot", "AI交付助理")], message_id="om_ai_missing_task")
+    )
+
+    assert result["action"] == "task_context_required"
+    assert handler.store.list_tasks() == []
+    assert replies == [("om_ai_missing_task", "请引用对应任务消息回复，或直接带上任务ID。")]
 
 
 def test_plain_chat_does_not_create_task(handler):

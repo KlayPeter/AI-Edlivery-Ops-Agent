@@ -11,9 +11,11 @@ from typing import Any, Dict
 from urllib.parse import unquote, urlparse
 
 from .adapters.feishu import FeishuAdapter
+from .adapters.llm import LLMAdapter
 from .adapters.tapd import TapdAdapter
 from .config import load_config, resolve_config_path, write_config
 from .services.dashboard import DashboardService
+from .services.message_intent import MessageIntentParser
 from .services.message_handler import MessageHandler
 from .storage import JsonStore
 
@@ -30,6 +32,8 @@ def build_handler(config_path: str | None = None, dry_run: bool = False) -> Mess
     store = JsonStore(config.data_path)
     feishu = FeishuAdapter(config.feishu, dry_run=dry_run)
     tapd = TapdAdapter(config.tapd, dry_run=dry_run)
+    llm = LLMAdapter(config.ai, dry_run=dry_run)
+    intent_parser = MessageIntentParser(llm)
     dashboard = DashboardService(
         store=store,
         data_dir=config.data_path,
@@ -37,7 +41,7 @@ def build_handler(config_path: str | None = None, dry_run: bool = False) -> Mess
         group_name=config.feishu.group_name,
         public_base_url=config.runtime.public_base_url,
     )
-    handler = MessageHandler(config, store, feishu, tapd, dashboard)
+    handler = MessageHandler(config, store, feishu, tapd, dashboard, intent_parser)
     handler.config_path = resolve_config_path(config_path)
     handler.dry_run = dry_run
     return handler

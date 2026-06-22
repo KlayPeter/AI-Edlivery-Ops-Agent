@@ -83,6 +83,28 @@ class TapdAdapter:
             return TapdResult(ok=True, raw={"dry_run": True, "payload": payload}, story_id=story_id, url=self.story_url(story_id))
         return self._post("/stories?s=mcp", payload)
 
+    def update_story_priority(self, story_id: str, priority_label: str) -> TapdResult:
+        payload = {
+            "workspace_id": self.config.workspace_id,
+            "id": story_id,
+            "entity_type": "stories",
+            "priority_label": priority_label,
+        }
+        if self.dry_run:
+            return TapdResult(ok=True, raw={"dry_run": True, "payload": payload}, story_id=story_id, url=self.story_url(story_id))
+        return self._post("/stories?s=mcp", payload)
+
+    def update_story_owner(self, story_id: str, owner: str) -> TapdResult:
+        payload = {
+            "workspace_id": self.config.workspace_id,
+            "id": story_id,
+            "entity_type": "stories",
+            "owner": owner,
+        }
+        if self.dry_run:
+            return TapdResult(ok=True, raw={"dry_run": True, "payload": payload}, story_id=story_id, url=self.story_url(story_id))
+        return self._post("/stories?s=mcp", payload)
+
     def story_url(self, story_id: str) -> str:
         return f"https://www.tapd.cn/{self.config.workspace_id}/prong/stories/view/{story_id}"
 
