@@ -11,7 +11,9 @@ const getTypeColor = (type) => {
     case 'task_plan_request': return 'purple';
     case 'task_group_notice': return 'green';
     case 'task_acceptance_prompt': return 'magenta';
-    default: return 'blue';
+    case 'missing_task_field': return 'orange';
+    case 'task_status_notice': return 'blue';
+    default: return 'default';
   }
 };
 
@@ -22,6 +24,8 @@ const getTypeName = (type) => {
     case 'task_plan_request': return '待补充计划';
     case 'task_group_notice': return '群聊通知';
     case 'task_acceptance_prompt': return '待验收任务';
+    case 'missing_task_field': return '补充任务字段';
+    case 'task_status_notice': return '状态变更通知';
     default: return type;
   }
 };
@@ -80,6 +84,8 @@ const ContextsPage = () => {
         { text: '待补充计划', value: 'task_plan_request' },
         { text: '群聊通知', value: 'task_group_notice' },
         { text: '待验收任务', value: 'task_acceptance_prompt' },
+        { text: '补充任务字段', value: 'missing_task_field' },
+        { text: '状态变更通知', value: 'task_status_notice' },
       ],
       onFilter: (value, record) => record.context_type === value,
       render: (type) => (
