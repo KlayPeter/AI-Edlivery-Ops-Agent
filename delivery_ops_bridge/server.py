@@ -8,7 +8,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, parse_qsl
 
 from .adapters.feishu import FeishuAdapter
 from .adapters.llm import LLMAdapter
