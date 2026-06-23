@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Card, Table, Tag, DatePicker, Row, Col, Button, Modal, Spin, message, Descriptions } from 'antd';
+import { Typography, Card, Table, Tag, DatePicker, Row, Col, Button, Modal, Spin, message, Descriptions, Select, Space } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api';
@@ -10,6 +10,7 @@ export default function StandupsPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [selectedDate, setSelectedDate] = useState(dayjs());
+  const [filterStatus, setFilterStatus] = useState('all');
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedStandup, setSelectedStandup] = useState(null);
 
@@ -78,11 +79,18 @@ export default function StandupsPage() {
     <div style={{ padding: '24px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0 }}>站会统计</Title>
-        <DatePicker 
-          value={selectedDate} 
-          onChange={(val) => val && setSelectedDate(val)} 
-          allowClear={false}
-        />
+        <Space>
+          <Select value={filterStatus} onChange={setFilterStatus} style={{ width: 120 }}>
+            <Select.Option value="all">全部状态</Select.Option>
+            <Select.Option value="submitted">已提交</Select.Option>
+            <Select.Option value="missing">未提交</Select.Option>
+          </Select>
+          <DatePicker 
+            value={selectedDate} 
+            onChange={(val) => val && setSelectedDate(val)} 
+            allowClear={false}
+          />
+        </Space>
       </div>
 
       <Spin spinning={loading}>
@@ -110,7 +118,10 @@ export default function StandupsPage() {
             </Row>
 
             <Table 
-              dataSource={data.members} 
+              dataSource={data.members.filter(m => 
+                filterStatus === 'all' ? true : 
+                filterStatus === 'submitted' ? m.submitted : !m.submitted
+              )} 
               columns={columns} 
               rowKey="open_id"
               pagination={false}
