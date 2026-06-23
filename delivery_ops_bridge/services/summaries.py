@@ -182,6 +182,9 @@ def render_daily_summary(summary: DailySummary) -> str:
         for idx, item in enumerate(summary.shares, 1):
             sender = _sender_name(item)
             lines.append(f"{idx}. {sender}：{item.get('title', '')}")
+            ai = item.get("ai_result") or {}
+            if ai.get("url"):
+                lines.append(f"   - 链接：{ai.get('url')}")
     else:
         lines.append("暂无资料分享。")
     lines.extend(["", "八、会议/通知"])
@@ -276,7 +279,7 @@ def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter) 
         "你是研发交付群聊日报分类器。只输出 JSON，不要 Markdown。"
         "从每条消息中识别 progress(进度更新)、blocker(阻塞事项)、decision(决策结论)、risk(风险提示)、help(求助问题)、share(资料分享)、meeting(会议/通知)，可一条消息产生多个 items。"
         "输出格式：{\"items\":[{\"message_id\":\"\",\"type\":\"progress|blocker|decision|risk|help|share|meeting\","
-        "\"title\":\"简短中文标题\",\"related_users\":[\"姓名\"],\"risk_level\":\"low|medium|high|\",\"confidence\":0.0}]}。"
+        "\"title\":\"简短中文标题\",\"related_users\":[\"姓名\"],\"risk_level\":\"low|medium|high|\",\"url\":\"原文中的链接(如果有)\",\"confidence\":0.0}]}。"
         "重要：必须在 related_users 提取原文中出现的真实姓名，绝对不能输出 _user_1 这种占位符！如果没有特定协助人则留空。"
         "不要编造消息 ID；没有价值的闲聊/噪音不要输出 item。"
     )
@@ -310,6 +313,7 @@ def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter) 
             "title": title,
             "related_users": _string_list(raw_item.get("related_users")),
             "risk_level": _string(raw_item.get("risk_level")),
+            "url": _string(raw_item.get("url")),
         }
         item = _message_summary_item(message, item_type, confidence, title=title, ai_result=ai_result)
         classified[_summary_bucket(item_type)].append(item)
