@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber, Switch, Alert, Select, Space } from 'antd';
+import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber, Switch, Alert, Select, Space, TimePicker } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { api } from '../api';
 
 const JOBS = [
@@ -48,6 +49,9 @@ const ConfigPage = () => {
         if (config.schedule[`${job.id}_enabled`] === undefined) {
           config.schedule[`${job.id}_enabled`] = true;
         }
+        if (config.schedule[job.id]) {
+          config.schedule[job.id] = dayjs(config.schedule[job.id], 'HH:mm');
+        }
       });
 
       setOriginalConfig(config);
@@ -68,6 +72,13 @@ const ConfigPage = () => {
     setSaving(true);
     try {
       const mergedConfig = { ...originalConfig, ...values };
+      if (mergedConfig.schedule) {
+        JOBS.forEach(job => {
+          if (mergedConfig.schedule[job.id] && dayjs.isDayjs(mergedConfig.schedule[job.id])) {
+            mergedConfig.schedule[job.id] = mergedConfig.schedule[job.id].format('HH:mm');
+          }
+        });
+      }
       await api.saveConfig(mergedConfig);
       message.success('配置保存成功');
       setOriginalConfig(mergedConfig);
@@ -240,9 +251,9 @@ const ConfigPage = () => {
                     <Form.Item
                       name={['schedule', job.id]}
                       style={{ margin: 0 }}
-                      rules={[{ pattern: /^([01]\d|2[0-3]):[0-5]\d$/, message: '时间格式应为 HH:MM' }]}
+                      rules={[{ required: true, message: '请选择时间' }]}
                     >
-                      <Input placeholder="HH:MM" />
+                      <TimePicker format="HH:mm" style={{ width: '100%' }} />
                     </Form.Item>
                   </Col>
                   <Col span={6}>
