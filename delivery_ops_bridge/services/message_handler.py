@@ -99,6 +99,13 @@ class MessageHandler:
                 self.feishu.remove_reaction(message.id, reaction_id)
 
     def _handle_group_message(self, message: SourceMessage, reply_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        bot_mentioned = any(m.open_id == self.config.feishu.bot_open_id for m in message.mentions)
+        if not bot_mentioned:
+            message.ai_result = {"type": "ignored_group_chat"}
+            message.confidence = 0.0
+            self.store.save_source_message(message)
+            return {"handled": False, "reason": "not_directed_at_bot"}
+
         if reply_context is None:
             reply_context = self._resolve_reply_context(message)
             
