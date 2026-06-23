@@ -175,7 +175,14 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                     continue
                 if end_date and ts > end_date + "T23:59:59Z":
                     continue
-                is_group = bool(ctx.get("chat_id", "").startswith("oc_"))
+                saved_chat_type = ctx.get("chat_type", "")
+                if saved_chat_type:
+                    is_group = (saved_chat_type == "group")
+                else:
+                    is_group = (ctx.get("chat_id") == self.bridge.config.feishu.group_chat_id)
+                    
+                ctx["is_group"] = is_group
+
                 if chat_type == "private" and is_group:
                     continue
                 if chat_type == "group" and not is_group:

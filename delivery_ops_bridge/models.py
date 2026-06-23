@@ -170,6 +170,7 @@ class BotMessageContext:
     context_type: str
     created_at: str
     chat_id: str = ""
+    chat_type: str = ""
     target_open_id: Optional[str] = None
     task_id: Optional[str] = None
     task_title: Optional[str] = None

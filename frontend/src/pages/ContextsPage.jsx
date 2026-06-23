@@ -133,7 +133,7 @@ const ContextsPage = () => {
       key: 'target',
       width: 200,
       render: (_, record) => {
-        const isGroup = record.chat_id && record.chat_id.startsWith('oc_');
+        const isGroup = record.is_group;
         
         if (isGroup) {
           const groupTag = <Tag color="orange">群聊: {record.chat_name || shortId(record.chat_id)}</Tag>;

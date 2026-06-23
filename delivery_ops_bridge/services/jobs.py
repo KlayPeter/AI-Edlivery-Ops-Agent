@@ -47,6 +47,7 @@ class ScheduledJobs:
                         context_type="standup_prompt",
                         created_at=utc_now_iso(),
                         chat_id=result.chat_id or "",
+                        chat_type="p2p",
                         target_open_id=member.open_id,
                         metadata={"date": day.isoformat()},
                     )
