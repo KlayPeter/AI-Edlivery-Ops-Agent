@@ -116,7 +116,7 @@ class DashboardService:
         task_rows = "\n".join(self._task_row(task) for task in tasks) or "<tr><td colspan='7'>暂无任务</td></tr>"
         highlight_items = "\n".join(f"<li>{html.escape(item)}</li>" for item in highlights)
         status_rows = "\n".join(
-            f"<tr><td>{html.escape(item['label'])}</td><td>{item['count']}</td></tr>"
+            f"<tr><td><span class='pill pill-{html.escape(item['status'])}'>{html.escape(item['label'])}</span></td><td>{item['count']}</td></tr>"
             for item in data["status_distribution"]
         ) or "<tr><td colspan='2'>暂无任务</td></tr>"
         blocker_rows = "\n".join(self._issue_row(item) for item in blockers) or "<tr><td colspan='4'>暂无阻塞事项</td></tr>"
@@ -148,9 +148,18 @@ class DashboardService:
     table {{ width: 100%; border-collapse: collapse; background: #151d27; border: 1px solid #2c3a4c; }}
     th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #253244; font-size: 14px; vertical-align: top; }}
     th {{ color: #9fb0c3; background: #1b2633; }}
-    .pill {{ display: inline-block; padding: 3px 8px; border-radius: 999px; background: #253244; color: #dbe8f4; font-size: 12px; }}
+    .pill {{ display: inline-block; padding: 4px 10px; border-radius: 999px; background: #253244; color: #dbe8f4; font-size: 12px; font-weight: 500; line-height: 1; }}
+    .pill-accepted {{ background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }}
+    .pill-in_progress, .pill-confirmed {{ background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }}
+    .pill-pending_confirmation, .pill-pending_primary_owner {{ background: rgba(156, 163, 175, 0.15); color: #9ca3af; border: 1px solid rgba(156, 163, 175, 0.3); }}
+    .pill-blocked {{ background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }}
+    .pill-overdue {{ background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3); }}
+    .pill-owner_marked_done {{ background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.3); }}
+    .pill-cancelled {{ background: rgba(107, 114, 128, 0.15); color: #9ca3af; border: 1px solid rgba(107, 114, 128, 0.3); }}
     ul {{ padding-left: 22px; }}
     li {{ margin: 8px 0; }}
+    .sortable {{ cursor: pointer; user-select: none; transition: background 0.2s; }}
+    .sortable:hover {{ background: #253244; }}
   </style>
 </head>
 <body>
@@ -190,10 +199,11 @@ class DashboardService:
     </section>
     <section>
       <h2>任务列表</h2>
-      <table>
-        <thead><tr><th>任务</th><th>负责人</th><th>参与人</th><th>状态</th><th>优先级</th><th>截止</th><th>TAPD</th></tr></thead>
-        <tbody>{task_rows}</tbody>
+      <table id="task-table">
+        <thead><tr><th>任务</th><th>负责人</th><th>参与人</th><th>状态</th><th class="sortable" onclick="sortTable(4)">优先级 ↕</th><th class="sortable" onclick="sortTable(5)">截止 ↕</th><th>TAPD</th></tr></thead>
+        <tbody id="task-tbody">{task_rows}</tbody>
       </table>
+      <div id="pagination" style="margin-top: 12px; display: flex; gap: 8px;"></div>
     </section>
     <section>
       <h2>风险提示</h2>
@@ -216,6 +226,77 @@ class DashboardService:
       <ul>{standup_decisions}</ul>
     </section>
   </main>
+  <script>
+    let currentPage = 1;
+    const pageSize = 10;
+    let currentSortCol = -1;
+    let currentSortAsc = 1;
+
+    function renderTable() {{
+      const tbody = document.getElementById('task-tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      if (rows.length === 0 || rows[0].cells.length < 5) return;
+      
+      const totalPages = Math.ceil(rows.length / pageSize);
+      
+      rows.forEach((row, index) => {{
+        if (index >= (currentPage - 1) * pageSize && index < currentPage * pageSize) {{
+          row.style.display = '';
+        }} else {{
+          row.style.display = 'none';
+        }}
+      }});
+
+      const pagination = document.getElementById('pagination');
+      pagination.innerHTML = '';
+      if (totalPages > 1) {{
+        for (let i = 1; i <= totalPages; i++) {{
+          const btn = document.createElement('button');
+          btn.innerText = i;
+          btn.style.padding = '4px 10px';
+          btn.style.background = i === currentPage ? '#3b82f6' : '#253244';
+          btn.style.color = '#fff';
+          btn.style.border = 'none';
+          btn.style.borderRadius = '4px';
+          btn.style.cursor = 'pointer';
+          btn.onclick = () => {{
+            currentPage = i;
+            renderTable();
+          }};
+          pagination.appendChild(btn);
+        }}
+      }}
+    }}
+
+    function sortTable(colIndex) {{
+      const tbody = document.getElementById('task-tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      if (rows.length === 0 || rows[0].cells.length < 5) return;
+      
+      if (currentSortCol === colIndex) {{
+        currentSortAsc *= -1;
+      }} else {{
+        currentSortCol = colIndex;
+        currentSortAsc = 1;
+      }}
+
+      rows.sort((a, b) => {{
+        let valA = a.cells[colIndex].innerText.trim();
+        let valB = b.cells[colIndex].innerText.trim();
+        if (valA === '') valA = 'ZZZZ';
+        if (valB === '') valB = 'ZZZZ';
+        return valA.localeCompare(valB) * currentSortAsc;
+      }});
+
+      rows.forEach(row => tbody.appendChild(row));
+      currentPage = 1;
+      renderTable();
+    }}
+
+    document.addEventListener('DOMContentLoaded', () => {{
+      renderTable();
+    }});
+  </script>
 </body>
 </html>
 """
@@ -223,12 +304,14 @@ class DashboardService:
     def _task_row(self, task: Dict[str, Any]) -> str:
         link = task.get("tapd_url") or ""
         link_html = f"<a href='{html.escape(link)}'>查看</a>" if link else ""
+        status_raw = task.get("status", "")
+        status_label = STATUS_LABELS.get(status_raw, status_raw)
         return (
             "<tr>"
             f"<td>{html.escape(task.get('title', ''))}</td>"
             f"<td>{html.escape(task.get('primary_owner_name', ''))}</td>"
             f"<td>{html.escape('、'.join(task.get('assignee_names', [])))}</td>"
-            f"<td><span class='pill'>{html.escape(task.get('status', ''))}</span></td>"
+            f"<td><span class='pill pill-{html.escape(status_raw)}'>{html.escape(status_label)}</span></td>"
             f"<td>{html.escape(task.get('priority', ''))}</td>"
             f"<td>{html.escape(task.get('due_date') or '')}</td>"
             f"<td>{link_html}</td>"
