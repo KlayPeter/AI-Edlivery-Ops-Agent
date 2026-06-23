@@ -51,9 +51,14 @@ export const api = {
     const data = await request(client.get(url));
     return data;
   },
-  fetchContexts: async () => {
-    const data = await request(client.get("/contexts"));
-    return safeArray(data.contexts);
+  fetchContexts: async (page = 1, pageSize = 15, filters = {}) => {
+    let url = `/contexts?page=${page}&pageSize=${pageSize}`;
+    if (filters.startDate) url += `&startDate=${filters.startDate}`;
+    if (filters.endDate) url += `&endDate=${filters.endDate}`;
+    if (filters.contextType && filters.contextType !== 'all') url += `&contextType=${filters.contextType}`;
+    if (filters.chatType && filters.chatType !== 'all') url += `&chatType=${filters.chatType}`;
+    const data = await request(client.get(url));
+    return data;
   },
   fetchGroups: async () => {
     const data = await request(client.get("/feishu/groups"));

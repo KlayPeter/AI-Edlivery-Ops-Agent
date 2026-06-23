@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Table, Tag, Typography, message, Tooltip, Space, Tabs, Alert } from 'antd';
+import { Table, Tag, Typography, message, Tooltip, Space, Alert, DatePicker, Select, Button } from 'antd';
 import { api } from '../api';
+import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
+const { RangePicker } = DatePicker;
 
 const getTypeColor = (type) => {
   switch (type) {
@@ -30,6 +32,12 @@ const getTypeName = (type) => {
   }
 };
 
+const ALL_CONTEXT_TYPES = [
+  'task_confirmation', 'standup_prompt', 'task_plan_request', 
+  'task_group_notice', 'task_acceptance_prompt', 
+  'missing_task_field', 'task_status_notice'
+];
+
 const shortId = (value) => {
   if (!value) return '-';
   return value.split('_')[1]?.substring(0, 8) || value.substring(0, 8);
@@ -45,25 +53,45 @@ const formatDate = (value) => {
 const ContextsPage = () => {
   const [contexts, setContexts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('all');
   const [error, setError] = useState('');
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 15, total: 0 });
+  const [filters, setFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'all' });
+  const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'all' });
 
-  useEffect(() => {
-    let cancelled = false;
-    api.fetchContexts().then(data => {
-      if (cancelled) return;
-      setContexts(data);
-      setLoading(false);
-    }).catch(err => {
-      if (cancelled) return;
+  const fetchContexts = async (page, pageSize, filtersToApply = {}) => {
+    setLoading(true);
+    try {
+      const response = await api.fetchContexts(page, pageSize, filtersToApply);
+      setContexts(response.contexts || []);
+      setPagination({
+        current: response.page || page,
+        pageSize: response.pageSize || pageSize,
+        total: response.total || 0,
+      });
+      setError('');
+    } catch (err) {
       setError(err.message || '加载上下文失败');
       message.error('加载上下文失败：' + (err.message || '请求失败'));
+    } finally {
       setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    }
+  };
+
+  useEffect(() => {
+    fetchContexts(pagination.current, pagination.pageSize, appliedFilters);
+  }, [appliedFilters]);
+
+  const handleSearch = () => {
+    setAppliedFilters(filters);
+    setPagination(prev => ({ ...prev, current: 1 }));
+  };
+
+  const handleReset = () => {
+    const defaultFilters = { startDate: null, endDate: null, contextType: 'all', chatType: 'all' };
+    setFilters(defaultFilters);
+    setAppliedFilters(defaultFilters);
+    setPagination(prev => ({ ...prev, current: 1 }));
+  };
 
   const columns = [
     {
@@ -78,16 +106,6 @@ const ContextsPage = () => {
       dataIndex: 'context_type',
       key: 'context_type',
       width: 150,
-      filters: [
-        { text: '待确认任务', value: 'task_confirmation' },
-        { text: '站会提醒', value: 'standup_prompt' },
-        { text: '待补充计划', value: 'task_plan_request' },
-        { text: '群聊通知', value: 'task_group_notice' },
-        { text: '待验收任务', value: 'task_acceptance_prompt' },
-        { text: '补充任务字段', value: 'missing_task_field' },
-        { text: '状态变更通知', value: 'task_status_notice' },
-      ],
-      onFilter: (value, record) => record.context_type === value,
       render: (type) => (
         <Tag color={getTypeColor(type)} style={{ fontWeight: 500 }}>
           {getTypeName(type)}
@@ -143,38 +161,63 @@ const ContextsPage = () => {
     }
   ];
 
-  const privateContexts = contexts.filter(c => !!c.target_open_id);
-  const groupContexts = contexts.filter(c => !!c.chat_id);
-  
-  const getDataSource = () => {
-    if (activeTab === 'private') return privateContexts;
-    if (activeTab === 'group') return groupContexts;
-    return contexts;
-  };
-
-  const items = [
-    { key: 'all', label: `全部 (${contexts.length})` },
-    { key: 'private', label: `私聊上下文 (${privateContexts.length})` },
-    { key: 'group', label: `群聊上下文 (${groupContexts.length})` }
-  ];
-
   return (
     <div style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>上下文记忆 (Contexts)</Title>
         <Text type="secondary">这里展示了系统向用户发送的具有强交互属性的消息，当用户对这些消息“引用回复”时，中台能精确识别上下文语境。</Text>
       </div>
-      
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
+
+      <div style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <RangePicker 
+          value={filters.startDate ? [dayjs(filters.startDate), dayjs(filters.endDate)] : null}
+          onChange={(dates) => {
+            if (dates) {
+              setFilters({...filters, startDate: dates[0].format('YYYY-MM-DD'), endDate: dates[1].format('YYYY-MM-DD')});
+            } else {
+              setFilters({...filters, startDate: null, endDate: null});
+            }
+          }}
+        />
+        <Select
+          style={{ width: 150 }}
+          value={filters.contextType}
+          onChange={(val) => setFilters({...filters, contextType: val})}
+        >
+          <Select.Option value="all">所有类型</Select.Option>
+          {ALL_CONTEXT_TYPES.map(type => (
+            <Select.Option key={type} value={type}>{getTypeName(type)}</Select.Option>
+          ))}
+        </Select>
+        <Select
+          style={{ width: 150 }}
+          value={filters.chatType}
+          onChange={(val) => setFilters({...filters, chatType: val})}
+        >
+          <Select.Option value="all">全部分组</Select.Option>
+          <Select.Option value="private">私聊上下文</Select.Option>
+          <Select.Option value="group">群聊上下文</Select.Option>
+        </Select>
+        <Space>
+          <Button type="primary" onClick={handleSearch}>查询</Button>
+          <Button onClick={handleReset}>重置</Button>
+        </Space>
+      </div>
 
       {error && <Alert message="上下文加载失败" description={error} type="error" showIcon style={{ marginBottom: 16 }} />}
 
       <Table 
         columns={columns} 
-        dataSource={getDataSource()} 
+        dataSource={contexts} 
         rowKey="message_id" 
         loading={loading}
-        pagination={{ pageSize: 15 }}
+        pagination={{
+          current: pagination.current,
+          pageSize: pagination.pageSize,
+          total: pagination.total,
+          showSizeChanger: true,
+          onChange: (page, pageSize) => fetchContexts(page, pageSize, appliedFilters),
+        }}
         style={{ flex: 1, overflow: 'auto' }}
       />
     </div>

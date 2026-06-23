@@ -154,11 +154,35 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/contexts":
-            contexts = self.bridge.store.list_bot_message_contexts()
-            contexts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            parsed_url = urlparse(self.path)
+            query_components = dict(parse_qsl(parsed_url.query))
+            page = int(query_components.get("page", "1"))
+            page_size = int(query_components.get("pageSize", "15"))
+            context_type = query_components.get("contextType", "")
+            start_date = query_components.get("startDate", "")
+            end_date = query_components.get("endDate", "")
+            chat_type = query_components.get("chatType", "")
+            
+            all_contexts = self.bridge.store.list_bot_message_contexts()
+            all_contexts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            
+            filtered_contexts = []
+            for ctx in all_contexts:
+                if context_type and ctx.get("context_type") != context_type:
+                    continue
+                ts = ctx.get("created_at", "")
+                if start_date and ts < start_date:
+                    continue
+                if end_date and ts > end_date + "T23:59:59Z":
+                    continue
+                if chat_type == "private" and not ctx.get("target_open_id"):
+                    continue
+                if chat_type == "group" and not ctx.get("chat_id"):
+                    continue
+                filtered_contexts.append(ctx)
             
             # 丰富上下文中的人员名字信息
-            for ctx in contexts:
+            for ctx in filtered_contexts:
                 target_id = ctx.get("target_open_id")
                 if target_id:
                     member = self.bridge.config.member_by_open_id(target_id)
@@ -172,7 +196,16 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                     else:
                         ctx["chat_name"] = "其他群聊"
                         
-            self._json_response(200, {"contexts": contexts})
+            total = len(filtered_contexts)
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            
+            self._json_response(200, {
+                "contexts": filtered_contexts[start_idx:end_idx],
+                "total": total,
+                "page": page,
+                "pageSize": page_size
+            })
             return
 
         if path == "/api/standups":
