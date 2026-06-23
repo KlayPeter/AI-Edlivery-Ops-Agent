@@ -162,6 +162,7 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             start_date = query_components.get("startDate", "")
             end_date = query_components.get("endDate", "")
             chat_type = query_components.get("chatType", "")
+            target_open_id = query_components.get("targetOpenId", "")
             
             all_contexts = self.bridge.store.list_bot_message_contexts()
             all_contexts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -175,6 +176,9 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                     continue
                 if end_date and ts > end_date + "T23:59:59Z":
                     continue
+                if target_open_id and ctx.get("target_open_id") != target_open_id:
+                    continue
+                
                 saved_chat_type = ctx.get("chat_type", "")
                 if saved_chat_type:
                     is_group = (saved_chat_type == "group")

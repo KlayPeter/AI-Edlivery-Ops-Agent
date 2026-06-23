@@ -57,6 +57,7 @@ export const api = {
     if (filters.endDate) url += `&endDate=${filters.endDate}`;
     if (filters.contextType && filters.contextType !== 'all') url += `&contextType=${filters.contextType}`;
     if (filters.chatType && filters.chatType !== 'all') url += `&chatType=${filters.chatType}`;
+    if (filters.targetOpenId && filters.targetOpenId !== 'all') url += `&targetOpenId=${filters.targetOpenId}`;
     const data = await request(client.get(url));
     return data;
   },

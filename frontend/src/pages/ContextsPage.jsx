@@ -55,8 +55,9 @@ const ContextsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState({ current: 1, pageSize: 15, total: 0 });
-  const [filters, setFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private' });
-  const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private' });
+  const [members, setMembers] = useState([]);
+  const [filters, setFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private', targetOpenId: 'all' });
+  const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private', targetOpenId: 'all' });
 
   const fetchContexts = async (page, pageSize, filtersToApply = {}) => {
     setLoading(true);
@@ -81,13 +82,19 @@ const ContextsPage = () => {
     fetchContexts(pagination.current, pagination.pageSize, appliedFilters);
   }, [appliedFilters]);
 
+  useEffect(() => {
+    api.fetchConfig().then(data => {
+      if (data && data.members) setMembers(data.members);
+    }).catch(err => console.error('Failed to load members:', err));
+  }, []);
+
   const handleSearch = () => {
     setAppliedFilters(filters);
     setPagination(prev => ({ ...prev, current: 1 }));
   };
 
   const handleReset = () => {
-    const defaultFilters = { startDate: null, endDate: null, contextType: 'all', chatType: filters.chatType };
+    const defaultFilters = { startDate: null, endDate: null, contextType: 'all', chatType: filters.chatType, targetOpenId: 'all' };
     setFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
     setPagination(prev => ({ ...prev, current: 1 }));
@@ -203,6 +210,18 @@ const ContextsPage = () => {
             <Select.Option key={type} value={type}>{getTypeName(type)}</Select.Option>
           ))}
         </Select>
+        {filters.chatType === 'private' && (
+          <Select
+            style={{ width: 120 }}
+            value={filters.targetOpenId}
+            onChange={(val) => setFilters({...filters, targetOpenId: val})}
+          >
+            <Select.Option value="all">所有人员</Select.Option>
+            {members.map(m => (
+              <Select.Option key={m.open_id} value={m.open_id}>{m.name}</Select.Option>
+            ))}
+          </Select>
+        )}
         <Space>
           <Button type="primary" onClick={handleSearch}>查询</Button>
           <Button onClick={handleReset}>重置</Button>
