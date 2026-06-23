@@ -43,8 +43,12 @@ export const api = {
     return safeArray(data.dashboards);
   },
   getDashboardUrl: (filename) => `${API_BASE}/dashboards/${encodeURIComponent(filename)}`,
-  fetchLogs: async (page = 1, pageSize = 20) => {
-    const data = await request(client.get(`/logs?page=${page}&pageSize=${pageSize}`));
+  fetchLogs: async (page = 1, pageSize = 20, filters = {}) => {
+    let url = `/logs?page=${page}&pageSize=${pageSize}`;
+    if (filters.startDate) url += `&startDate=${filters.startDate}`;
+    if (filters.endDate) url += `&endDate=${filters.endDate}`;
+    if (filters.eventType && filters.eventType !== 'all') url += `&eventType=${filters.eventType}`;
+    const data = await request(client.get(url));
     return data;
   },
   fetchContexts: async () => {

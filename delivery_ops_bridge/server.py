@@ -110,6 +110,9 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             query_components = dict(parse_qsl(parsed_url.query))
             page = int(query_components.get("page", "1"))
             page_size = int(query_components.get("pageSize", "20"))
+            event_type = query_components.get("eventType", "")
+            start_date = query_components.get("startDate", "")
+            end_date = query_components.get("endDate", "")
             
             logs_path = self.bridge.config.data_path / "logs" / "audit.jsonl"
             if not logs_path.exists():
@@ -120,7 +123,20 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                 with open(logs_path, "r", encoding="utf-8") as f:
                     for line in f:
                         if line.strip():
-                            logs.append(json.loads(line))
+                            item = json.loads(line)
+                            
+                            if event_type:
+                                item_type = item.get("action") or item.get("event_type")
+                                if item_type != event_type:
+                                    continue
+                                    
+                            ts = item.get("timestamp", "")
+                            if start_date and ts < start_date:
+                                continue
+                            if end_date and ts > end_date + "T23:59:59Z":
+                                continue
+                                
+                            logs.append(item)
             except Exception:
                 pass
             
