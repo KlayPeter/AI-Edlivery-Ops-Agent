@@ -17,6 +17,9 @@ importers:
       axios:
         specifier: ^1.18.0
         version: 1.18.0
+      dayjs:
+        specifier: ^1.11.21
+        version: 1.11.21
       react:
         specifier: ^19.2.6
         version: 19.2.7
