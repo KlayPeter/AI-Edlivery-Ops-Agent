@@ -254,8 +254,8 @@ class MessageHandler:
 
     def _maybe_reply_missing_task_field(self, message: SourceMessage, source: str, reason: str) -> Optional[Dict[str, Any]]:
         prompts = {
-            "no_assignee_mentioned": "请 @ 任务负责人后再创建任务。",
-            "missing_title": "请补充任务标题，例如：@AI交付助理 @张三 创建任务：完成登录接口错误码统一。",
+            "no_assignee_mentioned": "任务创建没有负责人，请引用本条消息并回复：主负责人 @某某",
+            "missing_title": "任务创建没有标题，请引用本条消息并补充任务标题，例如：标题是 xxx",
         }
         text = prompts.get(reason)
         if not text:
@@ -785,7 +785,7 @@ class MessageHandler:
         if fields.priority:
             priority_label = PRIORITY_TO_TAPD_LABEL.get(fields.priority)
             if not priority_label:
-                self._reply(message, source, "优先级只支持 P0/P1/P2/P3。")
+                self._reply(message, source, "优先级只支持 P0/P1/P2。")
                 return {"handled": True, "action": "ai_clarification", "reason": "invalid_priority"}
             if task_data.get("tapd_story_id"):
                 tapd_result = self.tapd.update_story_priority(task_data["tapd_story_id"], priority_label)
