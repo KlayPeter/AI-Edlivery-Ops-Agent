@@ -115,18 +115,26 @@ const ConfigPage = () => {
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name={['feishu', 'group_chat_id']} label="群聊 ID">
+                  <Form.Item name={['feishu', 'group_chat_id']} label="群聊">
                     <Select
                       showSearch
                       allowClear
                       loading={groupsLoading}
-                      placeholder="请选择或输入群聊 ID"
+                      placeholder="请选择或输入群聊"
                       optionFilterProp="children"
                       filterOption={(input, option) =>
                         (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
                         (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
                       }
-                      options={groups.map(g => ({ label: g.name, value: g.chat_id }))}
+                      options={(() => {
+                        const opts = groups.map(g => ({ label: g.name, value: g.chat_id }));
+                        const currentId = originalConfig?.feishu?.group_chat_id;
+                        const currentName = originalConfig?.feishu?.group_name;
+                        if (currentId && !opts.find(o => o.value === currentId)) {
+                          opts.push({ label: currentName || currentId, value: currentId });
+                        }
+                        return opts;
+                      })()}
                     />
                   </Form.Item>
                 </Col>
