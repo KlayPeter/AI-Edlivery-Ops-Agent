@@ -219,7 +219,11 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             submitted_map = {s.get("open_id"): s for s in submitted_standups}
             
             members_data = []
+            active_members_count = 0
             for m in all_members:
+                if not getattr(m, "is_active", True):
+                    continue
+                active_members_count += 1
                 standup_data = submitted_map.get(m.open_id)
                 members_data.append({
                     "open_id": m.open_id,
@@ -229,9 +233,9 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                 })
                 
             stats = {
-                "total": len(all_members),
+                "total": active_members_count,
                 "submitted": len(submitted_map),
-                "missing": len(all_members) - len(submitted_map)
+                "missing": active_members_count - len(submitted_map)
             }
             
             self._json_response(200, {
