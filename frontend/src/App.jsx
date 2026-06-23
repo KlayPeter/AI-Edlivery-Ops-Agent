@@ -1,11 +1,12 @@
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Layout, Menu, ConfigProvider, theme } from 'antd';
-import { SettingOutlined, DashboardOutlined, CodeOutlined, UnorderedListOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { SettingOutlined, DashboardOutlined, CodeOutlined, UnorderedListOutlined, DatabaseOutlined, CheckSquareOutlined } from '@ant-design/icons';
 import ConfigPage from './pages/ConfigPage';
 import DashboardPage from './pages/DashboardPage';
 import LogsPage from './pages/LogsPage';
 import DebugPage from './pages/DebugPage';
 import ContextsPage from './pages/ContextsPage';
+import StandupsPage from './pages/StandupsPage';
 
 const { Header, Content } = Layout;
 
@@ -23,6 +24,11 @@ function AppContent() {
       key: '/logs',
       icon: <UnorderedListOutlined />,
       label: '系统日志',
+    },
+    {
+      key: '/standups',
+      icon: <CheckSquareOutlined />,
+      label: '站会统计',
     },
     {
       key: '/debug',
@@ -60,6 +66,7 @@ function AppContent() {
         <div style={{ background: '#fff', flex: 1, borderRadius: '8px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/standups" element={<StandupsPage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/debug" element={<DebugPage />} />
             <Route path="/contexts" element={<ContextsPage />} />

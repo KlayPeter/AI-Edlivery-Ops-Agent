@@ -143,6 +143,38 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"contexts": contexts})
             return
 
+        if path == "/api/standups":
+            query_components = dict(parse_qsl(parsed_url.query))
+            from .utils import utc_now_iso
+            target_date = query_components.get("date", utc_now_iso()[:10])
+            
+            all_members = self.bridge.config.members
+            submitted_standups = self.bridge.store.list_standups(target_date)
+            submitted_map = {s.get("open_id"): s for s in submitted_standups}
+            
+            members_data = []
+            for m in all_members:
+                standup_data = submitted_map.get(m.open_id)
+                members_data.append({
+                    "open_id": m.open_id,
+                    "name": m.name,
+                    "submitted": bool(standup_data),
+                    "standup_content": standup_data
+                })
+                
+            stats = {
+                "total": len(all_members),
+                "submitted": len(submitted_map),
+                "missing": len(all_members) - len(submitted_map)
+            }
+            
+            self._json_response(200, {
+                "date": target_date,
+                "stats": stats,
+                "members": members_data
+            })
+            return
+
         if path == "/api/feishu/groups":
             try:
                 groups = self.bridge.feishu.list_groups()
