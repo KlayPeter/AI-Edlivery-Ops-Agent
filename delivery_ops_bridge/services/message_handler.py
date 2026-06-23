@@ -39,7 +39,7 @@ TAPD_STATUS_CANCELLED = "status_20"
 TAPD_STATUS_BLOCKED = "workflow_suspended"
 WORKING_REACTION_MIN_SECONDS = 1.2
 AI_CONFIDENCE_THRESHOLD = 0.85
-PRIORITY_TO_TAPD_LABEL = {"P0": "High", "P1": "High", "P2": "Middle", "P3": "Low"}
+PRIORITY_TO_TAPD_LABEL = {"P0": "High", "P1": "Middle", "P2": "Low"}
 
 
 class MessageHandler:
@@ -432,8 +432,8 @@ class MessageHandler:
                     title=task_data.get("title", "未命名任务"),
                     primary_owner=target_mention,
                     assignees=[Mention(open_id=oid, name=n) for oid, n in zip(task_data["assignee_open_ids"], task_data["assignee_names"])],
-                    priority=task_data.get("priority", "P2"),
-                    tapd_priority_label=PRIORITY_TO_TAPD_LABEL.get(task_data.get("priority", "P2"), "Middle"),
+                    priority=task_data.get("priority", "P1"),
+                    tapd_priority_label=PRIORITY_TO_TAPD_LABEL.get(task_data.get("priority", "P1"), "Middle"),
                     due_date=task_data.get("due_date"),
                     acceptance_criteria=task_data.get("acceptance_criteria", []),
                     description=task_data.get("description", ""),
@@ -997,7 +997,7 @@ class MessageHandler:
         if not owner or not title:
             self._reply(message, message.chat_type, intent.clarification or "请补充任务标题和负责人。")
             return {"handled": True, "action": "ai_clarification", "reason": "missing_create_fields"}
-        priority = intent.fields.priority or "P2"
+        priority = intent.fields.priority or "P1"
         command = ParsedTaskCommand(
             should_create=True,
             reason="ai_intent",
