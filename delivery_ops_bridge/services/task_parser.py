@@ -16,6 +16,13 @@ TASK_INTENT_KEYWORDS = [
     "建任务",
     "建个任务",
     "建一个任务",
+    "创建子任务",
+    "新建子任务",
+    "建个子任务",
+    "建一个子任务",
+    "子任务：",
+    "子任务:",
+    "子任务",
     "安排一下",
     "麻烦处理",
     "请完成",
@@ -60,6 +67,7 @@ class ParsedTaskCommand:
     description: str = ""
     is_independent: bool = False
     missing_primary_owner: bool = False
+    is_subtask: bool = False
 
 
 def has_task_intent(text: str) -> bool:
@@ -71,11 +79,12 @@ def parse_task_command(
     mentions: List[Mention],
     bot_open_id: str,
     today: Optional[date] = None,
+    is_private: bool = False,
 ) -> ParsedTaskCommand:
     today = today or date.today()
     bot_mentioned = any(item.open_id == bot_open_id for item in mentions)
     assignees = [item for item in mentions if item.open_id != bot_open_id]
-    if not bot_mentioned:
+    if not is_private and not bot_mentioned:
         return ParsedTaskCommand(False, "bot_not_mentioned")
     if not assignees:
         return ParsedTaskCommand(False, "no_assignee_mentioned")
@@ -114,12 +123,13 @@ def parse_task_command(
         description=description,
         is_independent=is_independent,
         missing_primary_owner=missing_primary_owner,
+        is_subtask="子任务" in text,
     )
 
 
 def _extract_title(text: str) -> str:
     patterns = [
-        r"(?:创建任务|创建需求|新建任务|新建需求|任务|需求)\s*[:：]\s*(.+)",
+        r"(?:创建任务|创建需求|新建任务|新建需求|任务|需求|创建子任务|新建子任务|子任务)\s*[:：]\s*(.+)",
         r"(?:安排一下|麻烦处理|请完成|负责一下|跟进一下|做一下)\s*(.+)",
     ]
     for pattern in patterns:

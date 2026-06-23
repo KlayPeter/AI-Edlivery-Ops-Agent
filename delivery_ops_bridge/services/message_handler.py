@@ -131,7 +131,7 @@ class MessageHandler:
         if status_result:
             return status_result
 
-        command = parse_task_command(message.text, message.mentions, self.config.feishu.bot_open_id)
+        command = parse_task_command(message.text, message.mentions, self.config.feishu.bot_open_id, is_private=False)
         if not command.should_create:
             field_result = self._maybe_reply_missing_task_field(message, "group", command.reason) if has_task_intent(message.text) else None
             if field_result:
@@ -161,7 +161,9 @@ class MessageHandler:
         }
         message.confidence = 1.0
         self.store.save_source_message(message)
-        result = self._create_task_from_command(message, command)
+        contextual_task = self._contextual_task(message, reply_context, normalized_text=message.text)
+        parent_id = contextual_task.get("tapd_story_id") if contextual_task else None
+        result = self._create_task_from_command(message, command, parent_id=parent_id)
         self.store.set_idempotency_key(key, result)
         return result
 
@@ -208,6 +210,32 @@ class MessageHandler:
                 {"open_id": standup.open_id, "standup_id": standup.id, "linked_task_ids": linked},
             )
             return {"handled": True, "action": "standup_saved", "standup_id": standup.id, "linked_task_ids": linked}
+        
+        command = parse_task_command(message.text, message.mentions, self.config.feishu.bot_open_id, is_private=True)
+        if command.should_create:
+            key = f"{message.id}:create_task"
+            if self.store.has_idempotency_key(key):
+                return {"handled": True, "action": "idempotent_skip"}
+            message.ai_result = {
+                "type": "task_command",
+                "parser": "rule",
+                "reason": command.reason,
+                "title": command.title,
+                "priority": command.priority,
+                "due_date": command.due_date,
+            }
+            message.confidence = 1.0
+            self.store.save_source_message(message)
+            contextual_task = self._contextual_task(message, reply_context, normalized_text=message.text)
+            parent_id = contextual_task.get("tapd_story_id") if contextual_task else None
+            result = self._create_task_from_command(message, command, parent_id=parent_id)
+            self.store.set_idempotency_key(key, result)
+            return result
+        elif has_task_intent(message.text):
+            field_result = self._maybe_reply_missing_task_field(message, "private", command.reason)
+            if field_result:
+                return field_result
+
         status_result = self._maybe_handle_status_update(message, source="private", reply_context=reply_context)
         if status_result:
             return status_result
@@ -239,9 +267,9 @@ class MessageHandler:
         self.store.append_audit_log("task_field_missing", {"message_id": message.id, "reason": reason})
         return {"handled": True, "action": "task_field_missing", "reason": reason}
 
-    def _create_task_from_command(self, message: SourceMessage, command: ParsedTaskCommand) -> Dict[str, Any]:
+    def _create_task_from_command(self, message: SourceMessage, command: ParsedTaskCommand, parent_id: Optional[str] = None) -> Dict[str, Any]:
         if command.missing_primary_owner:
-            task = self._build_task(message, command, status=TASK_STATUS_PENDING_PRIMARY_OWNER, tapd_story_id=None, tapd_url=None)
+            task = self._build_task(message, command, status=TASK_STATUS_PENDING_PRIMARY_OWNER, tapd_story_id=None, tapd_url=None, parent_id=parent_id)
             task.is_draft = True
             self.store.save_task(task)
             assignees = "、".join(command.assignee_names if hasattr(command, "assignee_names") else [item.name for item in command.assignees])
@@ -271,11 +299,12 @@ class MessageHandler:
                 priority_label=command.tapd_priority_label,
                 due_date=command.due_date,
                 description=description,
+                parent_id=parent_id,
             )
             tapd_story_id = tapd_result.story_id if tapd_result.ok else None
             tapd_url = tapd_result.url if tapd_result.ok else None
 
-            parent = self._build_task(message, command, status=TASK_STATUS_PENDING_CONFIRMATION, tapd_story_id=tapd_story_id, tapd_url=tapd_url)
+            parent = self._build_task(message, command, status=TASK_STATUS_PENDING_CONFIRMATION, tapd_story_id=tapd_story_id, tapd_url=tapd_url, parent_id=parent_id)
             parent.title = f"父任务：{command.title}"
             parent.is_draft = True
             self.store.save_task(parent)
@@ -299,7 +328,7 @@ class MessageHandler:
             self.feishu.send_reply_text(message.id, f"已创建父任务和 {len(child_ids)} 个子任务，等待各负责人确认。")
             return {"handled": True, "action": "independent_tasks_created", "parent_id": parent.id, "child_ids": child_ids}
 
-        return self._create_single_task(message, command)
+        return self._create_single_task(message, command, parent_id=parent_id)
 
     def _create_single_task(self, message: SourceMessage, command: ParsedTaskCommand, parent_id: str | None = None) -> Dict[str, Any]:
         owner = command.primary_owner
