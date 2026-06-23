@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber, Switch, Alert, Select } from 'antd';
+import { Form, Input, Button, Card, Spin, message, Row, Col, InputNumber, Switch, Alert, Select, Space } from 'antd';
+import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { api } from '../api';
 
 const JOBS = [
@@ -265,6 +266,59 @@ const ConfigPage = () => {
                   </Form.Item>
                 </Col>
               </Row>
+            </Card>
+          </Col>
+        </Row>
+        
+        <Row gutter={24}>
+          <Col span={24}>
+            <Card title="团队成员列表 (Team Members)" style={{ marginBottom: 20 }}>
+              <Form.List name="members">
+                {(fields, { add, remove }) => (
+                  <>
+                    {fields.map(({ key, name, ...restField }) => (
+                      <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'name']}
+                          rules={[{ required: true, message: '请输入姓名' }]}
+                          style={{ width: 150 }}
+                        >
+                          <Input placeholder="姓名 (Name)" />
+                        </Form.Item>
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'open_id']}
+                          rules={[{ required: true, message: '请输入飞书 Open ID' }]}
+                          style={{ width: 300 }}
+                        >
+                          <Input placeholder="飞书 Open ID" />
+                        </Form.Item>
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'role']}
+                          style={{ width: 150 }}
+                        >
+                          <Input placeholder="角色 (可选)" />
+                        </Form.Item>
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'is_active']}
+                          valuePropName="checked"
+                        >
+                          <Switch checkedChildren="在职" unCheckedChildren="离职" />
+                        </Form.Item>
+                        <MinusCircleOutlined onClick={() => remove(name)} style={{ color: '#ff4d4f' }} />
+                      </Space>
+                    ))}
+                    <Form.Item>
+                      <Button type="dashed" onClick={() => add({ is_active: true })} block icon={<PlusOutlined />}>
+                        添加团队成员
+                      </Button>
+                    </Form.Item>
+                  </>
+                )}
+              </Form.List>
             </Card>
           </Col>
         </Row>
