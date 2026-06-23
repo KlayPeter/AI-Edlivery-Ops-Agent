@@ -503,7 +503,7 @@ class MessageHandler:
             action, identifier = match.group(1), match.group(2)
             task_data = self.store.find_task(identifier)
             if not task_data:
-                self._reply(message, source, "没有找到对应任务，请带上任务ID或TAPD Story ID。")
+                self._reply(message, source, "没有找到对应任务，请引用对应任务消息回复，或直接带上任务ID或者任务完整标题。")
                 return {"handled": True, "action": "task_not_found"}
             return self._apply_action(message, source, task_data, action, text)
 
@@ -515,14 +515,14 @@ class MessageHandler:
         if due_date and contextual_task:
             return self._update_task_due_date(message, source, contextual_task, due_date, text)
         if due_date and not contextual_task:
-            self._reply(message, source, "请引用对应任务消息回复，或直接带上任务ID。")
+            self._reply(message, source, "没有找到对应任务，请引用对应任务消息回复，或直接带上任务ID或者任务完整标题。")
             return {"handled": True, "action": "task_context_required"}
 
         context_action = re.match(r"^\s*(接受|拒绝|需要澄清|验收通过|打回)(?:[:：].+)?\s*$", text)
         if context_action and contextual_task:
             return self._apply_action(message, source, contextual_task, context_action.group(1), text)
         if context_action and not contextual_task:
-            self._reply(message, source, "请引用对应任务消息回复，或直接带上任务ID。")
+            self._reply(message, source, "没有找到对应任务，请引用对应任务消息回复，或直接带上任务ID或者任务完整标题。")
             return {"handled": True, "action": "task_context_required"}
 
         match = re.search(r"任务\s+(.+?)\s*(已完成|完成了|阻塞了|阻塞|进度[:：])(.+)?", text)
@@ -530,7 +530,7 @@ class MessageHandler:
             title = match.group(1).strip()
             task_data = self._find_task_by_title(title)
             if not task_data:
-                self._reply(message, source, "没有找到对应任务，请带上任务ID或更完整的任务标题。")
+                self._reply(message, source, "没有找到对应任务，请引用对应任务消息回复，或直接带上任务ID或者任务完整标题。")
                 return {"handled": True, "action": "task_not_found"}
             status_word = match.group(2)
             content = text
@@ -773,7 +773,7 @@ class MessageHandler:
             try:
                 date.fromisoformat(fields.due_date)
             except ValueError:
-                self._reply(message, source, "截止时间格式不明确，请换成 YYYY-MM-DD 或明确的日期。")
+                self._reply(message, source, "截止时间格式不明确，支持的格式如：YYYY-MM-DD，本周三，下周三，本月6号，明天等。")
                 return {"handled": True, "action": "ai_clarification", "reason": "invalid_due_date"}
             if task_data.get("tapd_story_id"):
                 tapd_result = self.tapd.update_story_due_date(task_data["tapd_story_id"], fields.due_date)

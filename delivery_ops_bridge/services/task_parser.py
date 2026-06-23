@@ -158,18 +158,46 @@ def parse_due_date_text(text: str, today: Optional[date] = None) -> Optional[str
         return today.isoformat()
     if "明天" in text or "明晚" in text:
         return (today + timedelta(days=1)).isoformat()
+    if "后天" in text:
+        return (today + timedelta(days=2)).isoformat()
+        
+    match = re.search(r"(?:(\d{4})[-年/])?(?:(1[0-2]|0?[1-9])[-月/])?(3[01]|[12][0-9]|0?[1-9])(?:日|号)", text)
+    if match:
+        y_str, m_str, d_str = match.groups()
+        y = int(y_str) if y_str else today.year
+        m = int(m_str) if m_str else today.month
+        d = int(d_str)
+        try:
+            return date(y, m, d).isoformat()
+        except ValueError:
+            pass
+
     match = re.search(r"(\d{4}-\d{1,2}-\d{1,2})", text)
     if match:
         y, m, d = [int(part) for part in match.group(1).split("-")]
-        return date(y, m, d).isoformat()
-    if "本周五" in text or "周五" in text:
-        days = (4 - today.weekday()) % 7
-        return (today + timedelta(days=days)).isoformat()
-    weekday_match = re.search(r"(?:本周|这周|周)([一二三四五六日天])", text)
+        try:
+            return date(y, m, d).isoformat()
+        except ValueError:
+            pass
+
+    weekday_match = re.search(r"(下下周|下周|本周|这周|周)([一二三四五六日天])", text)
     if weekday_match:
-        target_weekday = WEEKDAY_NAMES[weekday_match.group(1)]
-        days = (target_weekday - today.weekday()) % 7
+        prefix = weekday_match.group(1)
+        target_weekday = WEEKDAY_NAMES[weekday_match.group(2)]
+        current_weekday = today.weekday()
+        
+        weeks_add = 0
+        if prefix == "下周":
+            weeks_add = 1
+        elif prefix == "下下周":
+            weeks_add = 2
+            
+        days = target_weekday - current_weekday + 7 * weeks_add
+        if days < 0 and weeks_add == 0:
+            days += 7
+            
         return (today + timedelta(days=days)).isoformat()
+
     return None
 
 
