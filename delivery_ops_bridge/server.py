@@ -144,8 +144,9 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/standups":
+            parsed_url = urlparse(self.path)
             query_components = dict(parse_qsl(parsed_url.query))
-            from .utils import utc_now_iso
+            from .models import utc_now_iso
             target_date = query_components.get("date", utc_now_iso()[:10])
             
             all_members = self.bridge.config.members
