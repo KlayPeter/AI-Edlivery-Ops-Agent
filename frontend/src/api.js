@@ -43,9 +43,9 @@ export const api = {
     return safeArray(data.dashboards);
   },
   getDashboardUrl: (filename) => `${API_BASE}/dashboards/${encodeURIComponent(filename)}`,
-  fetchLogs: async () => {
-    const data = await request(client.get("/logs"));
-    return safeArray(data.logs);
+  fetchLogs: async (page = 1, pageSize = 20) => {
+    const data = await request(client.get(`/logs?page=${page}&pageSize=${pageSize}`));
+    return data;
   },
   fetchContexts: async () => {
     const data = await request(client.get("/contexts"));

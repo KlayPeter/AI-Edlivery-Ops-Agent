@@ -106,9 +106,14 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/logs":
+            parsed_url = urlparse(self.path)
+            query_components = dict(parse_qsl(parsed_url.query))
+            page = int(query_components.get("page", "1"))
+            page_size = int(query_components.get("pageSize", "20"))
+            
             logs_path = self.bridge.config.data_path / "logs" / "audit.jsonl"
             if not logs_path.exists():
-                self._json_response(200, {"logs": []})
+                self._json_response(200, {"logs": [], "total": 0})
                 return
             logs = []
             try:
@@ -118,7 +123,18 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                             logs.append(json.loads(line))
             except Exception:
                 pass
-            self._json_response(200, {"logs": list(reversed(logs))[:100]})
+            
+            logs.reverse()
+            total = len(logs)
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            
+            self._json_response(200, {
+                "logs": logs[start_idx:end_idx],
+                "total": total,
+                "page": page,
+                "pageSize": page_size
+            })
             return
 
         if path == "/api/contexts":
