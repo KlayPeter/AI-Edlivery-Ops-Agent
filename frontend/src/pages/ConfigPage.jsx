@@ -44,9 +44,11 @@ const ConfigPage = () => {
       const config = { ...data, schedule: { ...(data.schedule || {}) }, runtime: { ...(data.runtime || {}) } };
       if (config.runtime.daily_summary_period) {
         const [start, end] = config.runtime.daily_summary_period.split('-');
-        config.runtime.daily_summary_period_range = [dayjs(start, 'HH:mm'), dayjs(end, 'HH:mm')];
+        config.runtime.daily_summary_period_start = dayjs(start, 'HH:mm');
+        config.runtime.daily_summary_period_end = dayjs(end, 'HH:mm');
       } else {
-        config.runtime.daily_summary_period_range = [dayjs('00:00', 'HH:mm'), dayjs('23:59', 'HH:mm')];
+        config.runtime.daily_summary_period_start = dayjs('00:00', 'HH:mm');
+        config.runtime.daily_summary_period_end = dayjs('23:59', 'HH:mm');
       }
       if (config.schedule.task_reminder_frequency_hours === undefined) {
         config.schedule.task_reminder_frequency_hours = 24;
@@ -78,10 +80,12 @@ const ConfigPage = () => {
     setSaving(true);
     try {
       const mergedConfig = { ...originalConfig, ...values };
-      if (mergedConfig.runtime && mergedConfig.runtime.daily_summary_period_range) {
-        const [start, end] = mergedConfig.runtime.daily_summary_period_range;
+      if (mergedConfig.runtime && mergedConfig.runtime.daily_summary_period_start && mergedConfig.runtime.daily_summary_period_end) {
+        const start = mergedConfig.runtime.daily_summary_period_start;
+        const end = mergedConfig.runtime.daily_summary_period_end;
         mergedConfig.runtime.daily_summary_period = `${start.format('HH:mm')}-${end.format('HH:mm')}`;
-        delete mergedConfig.runtime.daily_summary_period_range;
+        delete mergedConfig.runtime.daily_summary_period_start;
+        delete mergedConfig.runtime.daily_summary_period_end;
       }
       if (mergedConfig.schedule) {
         JOBS.forEach(job => {
@@ -248,9 +252,20 @@ const ConfigPage = () => {
                 </Col>
               </Row>
               <Row gutter={24}>
-                <Col span={12}>
-                  <Form.Item name={['runtime', 'daily_summary_period_range']} label="群聊日报统计周期" rules={[{ required: true, message: '请选择统计周期' }]}>
-                    <TimePicker.RangePicker format="HH:mm" style={{ width: '100%' }} />
+                <Col span={24}>
+                  <Form.Item label="群聊日报统计周期" required>
+                    <Space align="baseline">
+                      <Form.Item name={['runtime', 'daily_summary_period_start']} rules={[{ required: true, message: '请选择起始时间' }]} style={{ marginBottom: 0 }}>
+                        <TimePicker format="HH:mm" placeholder="起始时间" />
+                      </Form.Item>
+                      <span style={{ margin: '0 8px' }}>至</span>
+                      <Form.Item name={['runtime', 'daily_summary_period_end']} rules={[{ required: true, message: '请选择结束时间' }]} style={{ marginBottom: 0 }}>
+                        <TimePicker format="HH:mm" placeholder="结束时间" />
+                      </Form.Item>
+                    </Space>
+                    <div style={{ fontSize: '12px', color: '#888', marginTop: 8 }}>
+                      注：若起始时间 ≥ 结束时间，则视为跨天（如 18:00 至 18:00 为昨日18点到今日18点）。
+                    </div>
                   </Form.Item>
                 </Col>
               </Row>
