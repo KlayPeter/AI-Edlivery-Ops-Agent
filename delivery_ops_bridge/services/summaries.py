@@ -130,67 +130,65 @@ def render_daily_summary(summary: DailySummary) -> str:
             lines.append(f"{idx}. {task.get('title', '')}")
             lines.append(f"   - 负责人：{task.get('primary_owner_name', '')}")
             lines.append(f"   - 当前状态：{STATUS_MAP.get(task.get('status', ''), task.get('status', ''))}")
-            lines.append(f"   - 来源：{_source_text(task)}")
     elif summary.progress_updates:
         for idx, item in enumerate(summary.progress_updates, 1):
-            lines.append(f"{idx}. {item.get('title', '')}")
-            lines.append(f"   - 来源：{_source_text(item)}")
+            sender = _sender_name(item)
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}")
     else:
         lines.append("暂无新增任务。")
     lines.extend(["", "三、阻塞事项"])
     if summary.blockers:
         for idx, item in enumerate(summary.blockers, 1):
-            lines.append(f"{idx}. {item.get('title') or item.get('content', '')}")
+            sender = _sender_name(item)
+            lines.append(f"{idx}. {sender}：{item.get('title') or item.get('content', '')}")
             ai = item.get("ai_result") or {}
             related = "、".join(ai.get("related_users", [])) or "待定"
-            lines.append(f"   - 被阻塞人：{item.get('sender_name', '未知')}")
             lines.append(f"   - 需要协助人：{related}")
             lines.append(f"   - 建议动作：跟进解决阻塞")
-            lines.append(f"   - 来源：{_source_text(item)}")
     else:
         lines.append("暂无明确阻塞。")
     lines.extend(["", "四、决策结论"])
     if summary.decisions:
         for idx, item in enumerate(summary.decisions, 1):
-            lines.append(f"{idx}. {item.get('title', '')}")
+            sender = _sender_name(item)
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}")
             ai = item.get("ai_result") or {}
             related = "、".join(ai.get("related_users", [])) or item.get('sender_name', '未知')
             lines.append(f"   - 决策人：{related}")
             lines.append(f"   - 影响范围：团队全员或相关人")
-            lines.append(f"   - 来源：{_source_text(item)}")
     else:
         lines.append("暂无明确决策。")
     lines.extend(["", "五、风险提示"])
     if summary.risks:
         for idx, item in enumerate(summary.risks, 1):
+            sender = _sender_name(item)
             status = f"，当前状态：{STATUS_MAP.get(item.get('status', ''), item.get('status', ''))}" if item.get("status") else ""
-            lines.append(f"{idx}. {item.get('title', '')}{status}")
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}{status}")
             ai = item.get("ai_result") or {}
             risk_level = ai.get("risk_level") or "中"
             lines.append(f"   - 风险等级：{risk_level}")
             lines.append(f"   - 建议动作：跟进风险情况")
-            lines.append(f"   - 来源：{_source_text(item)}")
     else:
         lines.append("暂无明显风险。")
     lines.extend(["", "六、求助问题"])
     if summary.helps:
         for idx, item in enumerate(summary.helps, 1):
-            lines.append(f"{idx}. {item.get('title', '')}")
-            lines.append(f"   - 来源：{_source_text(item)}")
+            sender = _sender_name(item)
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}")
     else:
         lines.append("暂无求助问题。")
     lines.extend(["", "七、资料分享"])
     if summary.shares:
         for idx, item in enumerate(summary.shares, 1):
-            lines.append(f"{idx}. {item.get('title', '')}")
-            lines.append(f"   - 来源：{_source_text(item)}")
+            sender = _sender_name(item)
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}")
     else:
         lines.append("暂无资料分享。")
     lines.extend(["", "八、会议/通知"])
     if summary.meetings:
         for idx, item in enumerate(summary.meetings, 1):
-            lines.append(f"{idx}. {item.get('title', '')}")
-            lines.append(f"   - 来源：{_source_text(item)}")
+            sender = _sender_name(item)
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}")
     else:
         lines.append("暂无会议/通知。")
     lines.extend(["", "九、需要管理者关注"])
@@ -389,9 +387,8 @@ def _risk_summary_item(task: Dict[str, Any], messages_by_id: Dict[str, Dict[str,
     return item
 
 
-def _source_text(item: Dict[str, Any]) -> str:
-    sender = item.get("source_sender_name") or item.get("sender_name") or item.get("creator_name") or "未知"
-    return f"{sender}在DevCraft创建的"
+def _sender_name(item: Dict[str, Any]) -> str:
+    return item.get("source_sender_name") or item.get("sender_name") or item.get("creator_name") or "未知"
 
 
 def _blocked_long_enough(task: Dict[str, Any]) -> bool:
