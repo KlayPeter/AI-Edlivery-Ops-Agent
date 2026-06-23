@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Typography, Card, Table, Tag, DatePicker, Row, Col, Button, Modal, Spin, message, Descriptions } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { api } from '../api';
 
 const { Title, Text } = Typography;
 
@@ -15,12 +16,11 @@ export default function StandupsPage() {
   const fetchStandups = async (dateStr) => {
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/standups?date=${dateStr}`);
-      const json = await response.json();
+      const json = await api.fetchStandups(dateStr);
       setData(json);
     } catch (err) {
       console.error(err);
-      message.error("获取站会数据失败");
+      message.error(err.message || "获取站会数据失败");
     } finally {
       setLoading(false);
     }
