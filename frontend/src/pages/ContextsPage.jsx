@@ -115,6 +115,9 @@ const ContextsPage = () => {
         if (record.target_open_id) {
           return <Tag color="blue">私聊: {shortId(record.target_open_id)}...</Tag>;
         }
+        if (record.chat_name) {
+          return <Tag color="orange">群聊: {record.chat_name}</Tag>;
+        }
         if (record.chat_id) {
           return <Tag color="orange">群聊: {shortId(record.chat_id)}...</Tag>;
         }

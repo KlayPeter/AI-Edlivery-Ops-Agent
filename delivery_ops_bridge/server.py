@@ -132,6 +132,13 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                     member = self.bridge.config.member_by_open_id(target_id)
                     if member:
                         ctx["target_name"] = member.name
+                
+                chat_id = ctx.get("chat_id")
+                if chat_id and not target_id:
+                    if chat_id == self.bridge.config.feishu.group_chat_id:
+                        ctx["chat_name"] = self.bridge.config.feishu.group_name
+                    else:
+                        ctx["chat_name"] = "其他群聊"
                         
             self._json_response(200, {"contexts": contexts})
             return
