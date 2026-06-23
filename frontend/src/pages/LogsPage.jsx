@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Typography, Tag, Alert, Table } from 'antd';
 import { api } from '../api';
 import dayjs from 'dayjs';
+import { getEventMapping } from '../constants';
 
 const { Title, Text } = Typography;
 
@@ -44,10 +45,12 @@ const LogsPage = () => {
     {
       title: '事件类型',
       key: 'event_type',
-      width: 200,
-      render: (_, record) => (
-        <Tag color="blue">{record.action || record.event_type || 'System'}</Tag>
-      ),
+      width: 150,
+      render: (_, record) => {
+        const rawType = record.action || record.event_type;
+        const mapping = getEventMapping(rawType);
+        return <Tag color={mapping.color}>{mapping.text}</Tag>;
+      },
     },
     {
       title: '摘要信息',
