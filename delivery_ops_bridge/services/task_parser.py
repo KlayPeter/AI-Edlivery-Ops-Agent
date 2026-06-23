@@ -145,7 +145,7 @@ def _extract_title(text: str) -> str:
 
 def _extract_priority(text: str) -> tuple[str, str]:
     upper = text.upper()
-    if any(token in upper for token in ["P0", "紧急", "马上", "立刻"]):
+    if any(token in upper for token in ["P0", "紧急", "马上", "立刻", "高"]):
         return "P0", "High"
     if any(token in upper for token in ["P2", "低", "不急"]):
         return "P2", "Low"

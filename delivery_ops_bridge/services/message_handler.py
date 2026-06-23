@@ -785,7 +785,7 @@ class MessageHandler:
         if fields.priority:
             priority_label = PRIORITY_TO_TAPD_LABEL.get(fields.priority)
             if not priority_label:
-                self._reply(message, source, "优先级只支持 P0/P1/P2。")
+                self._reply(message, source, "优先级只支持 P0/P1/P2（或高/中/低）。")
                 return {"handled": True, "action": "ai_clarification", "reason": "invalid_priority"}
             if task_data.get("tapd_story_id"):
                 tapd_result = self.tapd.update_story_priority(task_data["tapd_story_id"], priority_label)
