@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Table, Tag, Typography, message, Tooltip, Space, Alert, DatePicker, Select, Button } from 'antd';
+import { Table, Tag, Typography, message, Tooltip, Space, Alert, DatePicker, Select, Button, Tabs } from 'antd';
 import { api } from '../api';
 import dayjs from 'dayjs';
 
@@ -55,8 +55,8 @@ const ContextsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState({ current: 1, pageSize: 15, total: 0 });
-  const [filters, setFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'all' });
-  const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'all' });
+  const [filters, setFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private' });
+  const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private' });
 
   const fetchContexts = async (page, pageSize, filtersToApply = {}) => {
     setLoading(true);
@@ -87,9 +87,16 @@ const ContextsPage = () => {
   };
 
   const handleReset = () => {
-    const defaultFilters = { startDate: null, endDate: null, contextType: 'all', chatType: 'all' };
+    const defaultFilters = { startDate: null, endDate: null, contextType: 'all', chatType: filters.chatType };
     setFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
+    setPagination(prev => ({ ...prev, current: 1 }));
+  };
+
+  const handleTabChange = (key) => {
+    const newFilters = { ...filters, chatType: key };
+    setFilters(newFilters);
+    setAppliedFilters(newFilters);
     setPagination(prev => ({ ...prev, current: 1 }));
   };
 
@@ -191,25 +198,26 @@ const ContextsPage = () => {
           value={filters.contextType}
           onChange={(val) => setFilters({...filters, contextType: val})}
         >
-          <Select.Option value="all">所有类型</Select.Option>
+          <Select.Option value="all">所有事件类型</Select.Option>
           {ALL_CONTEXT_TYPES.map(type => (
             <Select.Option key={type} value={type}>{getTypeName(type)}</Select.Option>
           ))}
-        </Select>
-        <Select
-          style={{ width: 150 }}
-          value={filters.chatType}
-          onChange={(val) => setFilters({...filters, chatType: val})}
-        >
-          <Select.Option value="all">全部分组</Select.Option>
-          <Select.Option value="private">私聊上下文</Select.Option>
-          <Select.Option value="group">群聊上下文</Select.Option>
         </Select>
         <Space>
           <Button type="primary" onClick={handleSearch}>查询</Button>
           <Button onClick={handleReset}>重置</Button>
         </Space>
       </div>
+      
+      <Tabs 
+        activeKey={filters.chatType} 
+        onChange={handleTabChange}
+        items={[
+          { key: 'private', label: '私聊上下文' },
+          { key: 'group', label: '群聊上下文' },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
 
       {error && <Alert message="上下文加载失败" description={error} type="error" showIcon style={{ marginBottom: 16 }} />}
 
