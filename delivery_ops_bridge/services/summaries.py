@@ -29,34 +29,57 @@ STATUS_MAP = {
 }
 
 
-def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None, llm: LLMAdapter | None = None) -> DailySummary:
+def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None, llm: LLMAdapter | None = None, period: str = "00:00-23:59") -> DailySummary:
     day = day or date.today()
     date_text = day.isoformat()
+    
+    start_str, end_str = period.split("-") if "-" in period else ("00:00", "23:59")
+    h_start, m_start = map(int, start_str.split(":"))
+    h_end, m_end = map(int, end_str.split(":"))
+    
+    if h_start > h_end or (h_start == h_end and m_start >= m_end):
+        yesterday = day - timedelta(days=1)
+        start_time = datetime(yesterday.year, yesterday.month, yesterday.day, h_start, m_start, 0)
+    else:
+        start_time = datetime(day.year, day.month, day.day, h_start, m_start, 0)
+        
+    end_time = datetime(day.year, day.month, day.day, h_end, m_end, 59, 999999)
+
+    def _in_period(dt_str: str) -> bool:
+        if not dt_str:
+            return False
+        s = str(dt_str)
+        if s.isdigit():
+            dt = datetime.fromtimestamp(int(s) / 1000.0)
+        else:
+            try:
+                dt_utc = datetime.fromisoformat(s.replace("Z", ""))
+                offset = datetime.now() - datetime.utcnow()
+                dt = dt_utc + offset
+            except ValueError:
+                return False
+        return start_time <= dt <= end_time
+
     source_messages = store.list_source_messages()
     source_messages_by_id = {item.get("id", ""): item for item in source_messages if item.get("id")}
     all_tasks = [t for t in store.list_tasks() if t.get("status") != "deleted"]
     tasks_by_id = {item.get("id", ""): item for item in all_tasks if item.get("id")}
     group_task_ids = {item.get("id", "") for item in all_tasks if _item_group_id(item, source_messages_by_id) == group_id}
-    def _is_today(sent_at: str) -> bool:
-        s = str(sent_at)
-        if s.isdigit():
-            return datetime.fromtimestamp(int(s) / 1000.0).date().isoformat() == date_text
-        return s.startswith(date_text)
 
     messages = [
         item
         for item in source_messages
-        if _is_today(item.get("sent_at", "")) and item.get("chat_id") == group_id
+        if _in_period(item.get("sent_at", "")) and item.get("chat_id") == group_id
     ]
     tasks = [
         _task_summary_item(item, source_messages_by_id)
         for item in all_tasks
-        if str(item.get("created_at", "")).startswith(date_text) and _item_group_id(item, source_messages_by_id) == group_id
+        if _in_period(item.get("created_at", "")) and _item_group_id(item, source_messages_by_id) == group_id
     ]
     updates = [
         _update_summary_item(item, source_messages_by_id)
         for item in store.list_task_updates()
-        if str(item.get("created_at", "")).startswith(date_text)
+        if _in_period(item.get("created_at", ""))
         and (_item_group_id(item, source_messages_by_id) == group_id or item.get("task_id") in group_task_ids)
     ]
     classified = _classify_messages(messages, llm)

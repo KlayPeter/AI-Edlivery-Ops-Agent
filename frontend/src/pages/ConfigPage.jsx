@@ -41,7 +41,13 @@ const ConfigPage = () => {
         throw new Error('配置格式不正确');
       }
       // Ensure missing enabled flags default to true for UI display
-      const config = { ...data, schedule: { ...(data.schedule || {}) } };
+      const config = { ...data, schedule: { ...(data.schedule || {}) }, runtime: { ...(data.runtime || {}) } };
+      if (config.runtime.daily_summary_period) {
+        const [start, end] = config.runtime.daily_summary_period.split('-');
+        config.runtime.daily_summary_period_range = [dayjs(start, 'HH:mm'), dayjs(end, 'HH:mm')];
+      } else {
+        config.runtime.daily_summary_period_range = [dayjs('00:00', 'HH:mm'), dayjs('23:59', 'HH:mm')];
+      }
       if (config.schedule.task_reminder_frequency_hours === undefined) {
         config.schedule.task_reminder_frequency_hours = 24;
       }
@@ -72,6 +78,11 @@ const ConfigPage = () => {
     setSaving(true);
     try {
       const mergedConfig = { ...originalConfig, ...values };
+      if (mergedConfig.runtime && mergedConfig.runtime.daily_summary_period_range) {
+        const [start, end] = mergedConfig.runtime.daily_summary_period_range;
+        mergedConfig.runtime.daily_summary_period = `${start.format('HH:mm')}-${end.format('HH:mm')}`;
+        delete mergedConfig.runtime.daily_summary_period_range;
+      }
       if (mergedConfig.schedule) {
         JOBS.forEach(job => {
           if (mergedConfig.schedule[job.id] && dayjs.isDayjs(mergedConfig.schedule[job.id])) {
@@ -233,6 +244,13 @@ const ConfigPage = () => {
                 <Col span={12}>
                   <Form.Item name={['runtime', 'public_overdue_owners']} label="是否公开超期负责人" valuePropName="checked">
                     <Switch />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Form.Item name={['runtime', 'daily_summary_period_range']} label="群聊日报统计周期" rules={[{ required: true, message: '请选择统计周期' }]}>
+                    <TimePicker.RangePicker format="HH:mm" style={{ width: '100%' }} />
                   </Form.Item>
                 </Col>
               </Row>

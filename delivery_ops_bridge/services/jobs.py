@@ -146,7 +146,8 @@ class ScheduledJobs:
         return {"submitted": len(standups), "missing": len(missing)}
 
     def daily_summary(self, day: date | None = None) -> Dict[str, str]:
-        summary = build_daily_summary(self.store, self.config.feishu.group_chat_id, day, self.llm)
+        period = self.config.runtime.daily_summary_period
+        summary = build_daily_summary(self.store, self.config.feishu.group_chat_id, day, self.llm, period)
         self.store.save_daily_summary(summary)
         text = render_daily_summary(summary)
         self.feishu.send_group_text(text, self.config.feishu.group_chat_id)

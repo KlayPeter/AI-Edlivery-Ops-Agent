@@ -53,6 +53,7 @@ class RuntimeConfig:
     public_base_url: str = ""
     public_missing_standups: bool = False
     public_overdue_owners: bool = False
+    daily_summary_period: str = "00:00-23:59"
 
 
 @dataclass
