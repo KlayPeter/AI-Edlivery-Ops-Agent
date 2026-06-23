@@ -133,18 +133,23 @@ const ContextsPage = () => {
       key: 'target',
       width: 200,
       render: (_, record) => {
-        if (record.target_name) {
-          return <Tag color="blue">私聊: {record.target_name}</Tag>;
-        }
-        if (record.target_open_id) {
-          return <Tag color="blue">私聊: {shortId(record.target_open_id)}...</Tag>;
-        }
-        if (record.chat_name) {
-          return <Tag color="orange">群聊: {record.chat_name}</Tag>;
-        }
         if (record.chat_id) {
-          return <Tag color="orange">群聊: {shortId(record.chat_id)}...</Tag>;
+          const groupTag = <Tag color="orange">群聊: {record.chat_name || shortId(record.chat_id)}</Tag>;
+          if (record.target_open_id) {
+            return (
+              <Space direction="vertical" size={2}>
+                {groupTag}
+                <Tag color="cyan" style={{ border: 'none', background: 'transparent' }}>@ {record.target_name || shortId(record.target_open_id)}</Tag>
+              </Space>
+            );
+          }
+          return groupTag;
         }
+        
+        if (record.target_open_id) {
+          return <Tag color="blue">私聊: {record.target_name || shortId(record.target_open_id)}</Tag>;
+        }
+        
         return '-';
       }
     },

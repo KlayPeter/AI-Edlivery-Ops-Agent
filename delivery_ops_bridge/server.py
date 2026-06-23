@@ -175,7 +175,7 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                     continue
                 if end_date and ts > end_date + "T23:59:59Z":
                     continue
-                if chat_type == "private" and not ctx.get("target_open_id"):
+                if chat_type == "private" and ctx.get("chat_id"):
                     continue
                 if chat_type == "group" and not ctx.get("chat_id"):
                     continue
