@@ -11,7 +11,7 @@ from ..storage import JsonStore
 
 TASK_HINTS = ("任务", "负责", "跟进", "处理", "完成", "联调", "提测", "修复")
 PROGRESS_HINTS = ("进度", "完成了", "已完成", "推进", "联调", "提测", "上线")
-BLOCKER_HINTS = ("阻塞", "卡住", "无法", "等待", "需要帮助", "需要协助")
+BLOCKER_HINTS = ("阻塞", "卡住", "无法", "等待", "需要帮助", "需要协助", "失败")
 DECISION_HINTS = ("决定", "决策", "结论", "确认", "拍板", "定为")
 RISK_HINTS = ("风险", "延期", "来不及", "不稳定", "影响", "超期")
 SHARE_HINTS = ("分享", "文档", "链接", "资料", "http://", "https://")
@@ -82,7 +82,7 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
         if _in_period(item.get("created_at", ""))
         and (_item_group_id(item, source_messages_by_id) == group_id or item.get("task_id") in group_task_ids)
     ]
-    classified = _classify_messages(messages, llm)
+    classified = _classify_messages(messages, llm, store)
     progress_updates = updates + classified["progress_updates"]
     task_blockers = [
         _risk_summary_item(item, source_messages_by_id, item_type="blocker")
@@ -118,8 +118,16 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
             res = llm.chat(prompt, "")
             if res.ok and res.content.strip():
                 ai_abstract = res.content.strip()
-        except Exception:
-            pass
+            elif not res.ok:
+                store.append_audit_log(
+                    "ai_daily_summary_failed",
+                    {"date": date_text, "stage": "abstract", "reason": res.error or "empty_response"},
+                )
+        except Exception as exc:
+            store.append_audit_log(
+                "ai_daily_summary_failed",
+                {"date": date_text, "stage": "abstract", "reason": str(exc)},
+            )
 
     return DailySummary(
         id=f"summary-{date_text}",
@@ -140,7 +148,7 @@ def build_daily_summary(store: JsonStore, group_id: str, day: date | None = None
 
 
 def render_daily_summary(summary: DailySummary) -> str:
-    if not any([summary.highlights, summary.tasks, summary.progress_updates, summary.blockers, summary.decisions, summary.risks, summary.shares]):
+    if not any([summary.highlights, summary.tasks, summary.progress_updates, summary.blockers, summary.decisions, summary.risks, summary.helps, summary.shares]):
         return "今日群内无可总结的有效工作信息。"
     lines = [f"【今日研发群聊总结｜{summary.date}】", ""]
     if summary.ai_abstract:
@@ -163,7 +171,7 @@ def render_daily_summary(summary: DailySummary) -> str:
     if summary.blockers:
         for idx, item in enumerate(summary.blockers, 1):
             sender = _sender_name(item)
-            lines.append(f"{idx}. {sender}：{item.get('title') or item.get('content', '')}")
+            lines.append(f"{idx}. {sender}：{item.get('title') or item.get('content', '')}{_source_suffix(item)}")
             ai = item.get("ai_result") or {}
             related = "、".join(ai.get("related_users", [])) or "待定"
             lines.append(f"   - 需要协助人：{related}")
@@ -174,7 +182,7 @@ def render_daily_summary(summary: DailySummary) -> str:
     if summary.decisions:
         for idx, item in enumerate(summary.decisions, 1):
             sender = _sender_name(item)
-            lines.append(f"{idx}. {sender}：{item.get('title', '')}")
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}{_source_suffix(item)}")
             ai = item.get("ai_result") or {}
             related = "、".join(ai.get("related_users", [])) or item.get('sender_name', '未知')
             lines.append(f"   - 决策人：{related}")
@@ -186,42 +194,42 @@ def render_daily_summary(summary: DailySummary) -> str:
         for idx, item in enumerate(summary.risks, 1):
             sender = _sender_name(item)
             status = f"，当前状态：{STATUS_MAP.get(item.get('status', ''), item.get('status', ''))}" if item.get("status") else ""
-            lines.append(f"{idx}. {sender}：{item.get('title', '')}{status}")
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}{status}{_source_suffix(item)}")
             ai = item.get("ai_result") or {}
             risk_level = ai.get("risk_level") or "中"
             lines.append(f"   - 风险等级：{risk_level}")
             lines.append(f"   - 建议动作：跟进风险情况")
     else:
         lines.append("暂无明显风险。")
-    lines.extend(["", "六、求助问题"])
-    if summary.helps:
-        for idx, item in enumerate(summary.helps, 1):
-            sender = _sender_name(item)
-            lines.append(f"{idx}. {sender}：{item.get('title', '')}")
-    else:
-        lines.append("暂无求助问题。")
-    lines.extend(["", "七、资料分享"])
+    lines.extend(["", "六、资料分享"])
     if summary.shares:
         for idx, item in enumerate(summary.shares, 1):
             sender = _sender_name(item)
-            lines.append(f"{idx}. {sender}：{item.get('title', '')}")
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}{_source_suffix(item)}")
             ai = item.get("ai_result") or {}
             if ai.get("url"):
                 lines.append(f"   - 链接：{ai.get('url')}")
     else:
         lines.append("暂无资料分享。")
+    lines.extend(["", "七、求助问题"])
+    if summary.helps:
+        for idx, item in enumerate(summary.helps, 1):
+            sender = _sender_name(item)
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}{_source_suffix(item)}")
+    else:
+        lines.append("暂无求助问题。")
     lines.extend(["", "八、会议/通知"])
     if summary.meetings:
         for idx, item in enumerate(summary.meetings, 1):
             sender = _sender_name(item)
-            lines.append(f"{idx}. {sender}：{item.get('title', '')}")
+            lines.append(f"{idx}. {sender}：{item.get('title', '')}{_source_suffix(item)}")
     else:
         lines.append("暂无会议/通知。")
     lines.extend(["", "九、需要管理者关注"])
-    attention = summary.blockers + summary.risks
+    attention = summary.blockers + summary.risks + summary.helps
     if attention:
         for idx, item in enumerate(attention[:5], 1):
-            lines.append(f"{idx}. {item.get('title') or item.get('content', '')}")
+            lines.append(f"{idx}. {item.get('title') or item.get('content', '')}{_source_suffix(item)}")
     else:
         lines.append("暂无需要管理者特别关注的事项。")
     return "\n".join(lines)
@@ -257,9 +265,9 @@ def _highlights(
     return values[:5]
 
 
-def _classify_messages(messages: List[Dict[str, Any]], llm: LLMAdapter | None = None) -> Dict[str, List[Dict[str, Any]]]:
+def _classify_messages(messages: List[Dict[str, Any]], llm: LLMAdapter | None = None, store: JsonStore | None = None) -> Dict[str, List[Dict[str, Any]]]:
     if llm:
-        classified = _classify_messages_with_ai(messages, llm)
+        classified = _classify_messages_with_ai(messages, llm, store)
         if classified is not None:
             return classified
     return _classify_messages_with_rules(messages)
@@ -284,7 +292,7 @@ def _classify_messages_with_rules(messages: List[Dict[str, Any]]) -> Dict[str, L
     return result
 
 
-def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter) -> Dict[str, List[Dict[str, Any]]] | None:
+def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter, store: JsonStore | None = None) -> Dict[str, List[Dict[str, Any]]] | None:
     if not messages:
         return _empty_classification()
     payload = {
@@ -308,13 +316,28 @@ def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter) 
     )
     result = llm.chat(system, json.dumps(payload, ensure_ascii=False))
     if not result.ok or not result.content.strip():
+        if store:
+            store.append_audit_log(
+                "ai_daily_summary_failed",
+                {"stage": "classification", "reason": result.error or "empty_response", "message_count": len(messages)},
+            )
         return None
     try:
         raw = json.loads(_extract_json(result.content))
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        if store:
+            store.append_audit_log(
+                "ai_daily_summary_failed",
+                {"stage": "classification", "reason": f"invalid_json: {exc}", "message_count": len(messages)},
+            )
         return None
     raw_items = raw.get("items", []) if isinstance(raw, dict) else raw
     if not isinstance(raw_items, list):
+        if store:
+            store.append_audit_log(
+                "ai_daily_summary_failed",
+                {"stage": "classification", "reason": "items_not_list", "message_count": len(messages)},
+            )
         return None
     messages_by_id = {item.get("id", ""): item for item in messages}
     classified = _empty_classification()
@@ -327,6 +350,8 @@ def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter) 
         if not item_type or not message:
             continue
         confidence = _confidence(raw_item.get("confidence", 1.0))
+        if confidence < 0.6:
+            continue
         title = _string(raw_item.get("title")) or _compact_title(str(message.get("text", "")))
         if confidence < 0.85 and confidence != 1.0:
             title = f"可能：{title}"
@@ -417,6 +442,13 @@ def _risk_summary_item(task: Dict[str, Any], messages_by_id: Dict[str, Dict[str,
 
 def _sender_name(item: Dict[str, Any]) -> str:
     return item.get("source_sender_name") or item.get("sender_name") or item.get("creator_name") or "未知"
+
+
+def _source_suffix(item: Dict[str, Any]) -> str:
+    ids = item.get("source_message_ids") or []
+    if not ids:
+        return ""
+    return f"（来源：{', '.join(str(item_id) for item_id in ids)}）"
 
 
 def _blocked_long_enough(task: Dict[str, Any]) -> bool:

@@ -69,11 +69,9 @@ class MessageHandler:
             return {"handled": False, "reason": "not_message_event"}
 
         reply_context = self._resolve_reply_context(message)
-        is_explicit = message.chat_type == "p2p" or reply_context is not None or any(m.open_id == self.config.feishu.bot_open_id for m in message.mentions)
 
         reaction_id, reaction_started_at = None, time.monotonic()
-        if is_explicit:
-            reaction_id, reaction_started_at = self._add_working_reaction(message)
+        reaction_id, reaction_started_at = self._add_working_reaction(message)
         try:
             self.store.save_source_message(message)
             self.store.append_audit_log("source_message_received", {
@@ -100,7 +98,7 @@ class MessageHandler:
 
     def _handle_group_message(self, message: SourceMessage, reply_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         bot_mentioned = any(m.open_id == self.config.feishu.bot_open_id for m in message.mentions)
-        if not bot_mentioned:
+        if not bot_mentioned and reply_context is None:
             message.ai_result = {"type": "ignored_group_chat"}
             message.confidence = 0.0
             self.store.save_source_message(message)
@@ -190,8 +188,6 @@ class MessageHandler:
             self.feishu.send_private_text(message.sender_open_id, "暂未识别你的身份，请联系管理员完成成员绑定。")
             self.store.append_audit_log("unknown_user", {"open_id": message.sender_open_id, "chat_id": message.chat_id})
             return {"handled": True, "action": "unknown_user"}
-        reply_context = self._resolve_reply_context(message)
-        
         if reply_context and reply_context.get("context_type") == "missing_task_field":
             original_text = reply_context.get("metadata", {}).get("original_text", "")
             if original_text:
@@ -254,7 +250,7 @@ class MessageHandler:
 
     def _maybe_reply_missing_task_field(self, message: SourceMessage, source: str, reason: str) -> Optional[Dict[str, Any]]:
         prompts = {
-            "no_assignee_mentioned": "任务创建没有负责人，请引用本条消息并回复：主负责人 @某某",
+            "no_assignee_mentioned": "请 @ 任务负责人后再创建任务。",
             "missing_title": "任务创建没有标题，请引用本条消息并补充任务标题，例如：标题是 xxx",
         }
         text = prompts.get(reason)
@@ -435,8 +431,8 @@ class MessageHandler:
                     title=task_data.get("title", "未命名任务"),
                     primary_owner=target_mention,
                     assignees=[Mention(open_id=oid, name=n) for oid, n in zip(task_data["assignee_open_ids"], task_data["assignee_names"])],
-                    priority=task_data.get("priority", "P1"),
-                    tapd_priority_label=PRIORITY_TO_TAPD_LABEL.get(task_data.get("priority", "P1"), "Middle"),
+                    priority=task_data.get("priority", "P2"),
+                    tapd_priority_label=PRIORITY_TO_TAPD_LABEL.get(task_data.get("priority", "P2"), "Low"),
                     due_date=task_data.get("due_date"),
                     acceptance_criteria=task_data.get("acceptance_criteria", []),
                     description=task_data.get("description", ""),
@@ -508,7 +504,7 @@ class MessageHandler:
             action, identifier = match.group(1), match.group(2)
             task_data = self.store.find_task(identifier)
             if not task_data:
-                self._reply(message, source, "没有找到对应任务，请引用对应任务消息回复，或直接带上任务ID或者任务完整标题。")
+                self._reply(message, source, "请引用对应任务消息回复，或直接带上任务ID。")
                 return {"handled": True, "action": "task_not_found"}
             return self._apply_action(message, source, task_data, action, text)
 
@@ -520,14 +516,14 @@ class MessageHandler:
         if due_date and contextual_task:
             return self._update_task_due_date(message, source, contextual_task, due_date, text)
         if due_date and not contextual_task:
-            self._reply(message, source, "没有找到对应任务，请引用对应任务消息回复，或直接带上任务ID或者任务完整标题。")
+            self._reply(message, source, "请引用对应任务消息回复，或直接带上任务ID。")
             return {"handled": True, "action": "task_context_required"}
 
         context_action = re.match(r"^\s*(接受|拒绝|需要澄清|验收通过|打回)(?:[:：].+)?\s*$", text)
         if context_action and contextual_task:
             return self._apply_action(message, source, contextual_task, context_action.group(1), text)
         if context_action and not contextual_task:
-            self._reply(message, source, "没有找到对应任务，请引用对应任务消息回复，或直接带上任务ID或者任务完整标题。")
+            self._reply(message, source, "请引用对应任务消息回复，或直接带上任务ID。")
             return {"handled": True, "action": "task_context_required"}
 
         match = re.search(r"任务\s+(.+?)\s*(已完成|完成了|阻塞了|阻塞|进度[:：])(.+)?", text)
@@ -535,7 +531,7 @@ class MessageHandler:
             title = match.group(1).strip()
             task_data = self._find_task_by_title(title)
             if not task_data:
-                self._reply(message, source, "没有找到对应任务，请引用对应任务消息回复，或直接带上任务ID或者任务完整标题。")
+                self._reply(message, source, "请引用对应任务消息回复，或直接带上任务ID。")
                 return {"handled": True, "action": "task_not_found"}
             status_word = match.group(2)
             content = text
@@ -1378,8 +1374,7 @@ class MessageHandler:
                 TASK_STATUS_OWNER_MARKED_DONE,
             }:
                 candidates.append(task)
-        if len(candidates) >= 1:
-            candidates.sort(key=lambda t: t.get("updated_at", ""), reverse=True)
+        if len(candidates) == 1:
             return candidates[0]
         return None
 

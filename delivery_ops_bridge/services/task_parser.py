@@ -60,8 +60,8 @@ class ParsedTaskCommand:
     title: str = ""
     primary_owner: Optional[Mention] = None
     assignees: List[Mention] = field(default_factory=list)
-    priority: str = "P1"
-    tapd_priority_label: str = "Middle"
+    priority: str = "P2"
+    tapd_priority_label: str = "Low"
     due_date: Optional[str] = None
     acceptance_criteria: List[str] = field(default_factory=list)
     description: str = ""
@@ -147,9 +147,11 @@ def _extract_priority(text: str) -> tuple[str, str]:
     upper = text.upper()
     if any(token in upper for token in ["P0", "紧急", "马上", "立刻", "高"]):
         return "P0", "High"
+    if any(token in upper for token in ["P1", "中", "一般"]):
+        return "P1", "Middle"
     if any(token in upper for token in ["P2", "低", "不急"]):
         return "P2", "Low"
-    return "P1", "Middle"
+    return "P2", "Low"
 
 
 def parse_due_date_text(text: str, today: Optional[date] = None) -> Optional[str]:
