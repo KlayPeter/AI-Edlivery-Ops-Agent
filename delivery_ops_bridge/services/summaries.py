@@ -279,7 +279,7 @@ def _classify_messages_with_ai(messages: List[Dict[str, Any]], llm: LLMAdapter) 
         "你是研发交付群聊日报分类器。只输出 JSON，不要 Markdown。"
         "从每条消息中识别 progress(进度更新)、blocker(阻塞事项)、decision(决策结论)、risk(风险提示)、help(求助问题)、share(资料分享)、meeting(会议/通知)，可一条消息产生多个 items。"
         "输出格式：{\"items\":[{\"message_id\":\"\",\"type\":\"progress|blocker|decision|risk|help|share|meeting\","
-        "\"title\":\"简短中文标题\",\"related_users\":[\"姓名\"],\"risk_level\":\"low|medium|high|\",\"url\":\"原文中的链接(如果有)\",\"confidence\":0.0}]}。"
+        "\"title\":\"简短中文标题(如原文包含具体时间、截止日期等关键时间信息，必须在标题中完整保留)\",\"related_users\":[\"姓名\"],\"risk_level\":\"low|medium|high|\",\"url\":\"原文中的链接(如果有)\",\"confidence\":0.0}]}。"
         "重要：必须在 related_users 提取原文中出现的真实姓名，绝对不能输出 _user_1 这种占位符！如果没有特定协助人则留空。"
         "不要编造消息 ID；没有价值的闲聊/噪音不要输出 item。"
     )
