@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Card, Table, Tag, DatePicker, Row, Col, Button, Modal, Spin, message, Descriptions, Select, Space } from 'antd';
-import { EyeOutlined } from '@ant-design/icons';
+import { Typography, Card, Table, Tag, DatePicker, Row, Col, Button, Modal, Spin, message, Select, Space } from 'antd';
+import { EyeOutlined, CheckCircleOutlined, ClockCircleOutlined, StopOutlined, WarningOutlined, QuestionCircleOutlined, CloseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api';
 
@@ -131,52 +131,48 @@ export default function StandupsPage() {
       </Spin>
 
       <Modal
-        title={`站会详情 - ${selectedStandup?.user_name || ''}`}
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottom: '1px solid #f0f0f0', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 4, height: 18, background: '#1677ff', borderRadius: 2 }}></div>
+              <span style={{ fontSize: 18, fontWeight: 600 }}>站会详情 - {selectedStandup?.user_name || ''}</span>
+            </div>
+            <Button type="text" icon={<CloseOutlined />} onClick={() => setModalVisible(false)} />
+          </div>
+        }
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
-        width={600}
+        width={650}
+        closeIcon={false}
+        styles={{ header: { marginBottom: 0 }, body: { padding: '8px 0' } }}
       >
         {selectedStandup && (
-          <Descriptions column={1} bordered>
-            <Descriptions.Item label="昨日完成">
-              {selectedStandup.yesterday_done?.length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
-                  {selectedStandup.yesterday_done.map((item, i) => <li key={i}>{item}</li>)}
-                </ul>
-              ) : <Text type="secondary">无</Text>}
-            </Descriptions.Item>
-            <Descriptions.Item label="今日计划">
-              {selectedStandup.today_plan?.length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
-                  {selectedStandup.today_plan.map((item, i) => <li key={i}>{item}</li>)}
-                </ul>
-              ) : <Text type="secondary">无</Text>}
-            </Descriptions.Item>
-            <Descriptions.Item label="阻塞项">
-              {selectedStandup.blockers?.length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
-                  {selectedStandup.blockers.map((item, i) => <li key={i}>{item}</li>)}
-                </ul>
-              ) : <Text type="secondary">无</Text>}
-            </Descriptions.Item>
-            <Descriptions.Item label="风险预警">
-              {selectedStandup.risks?.length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
-                  {selectedStandup.risks.map((item, i) => <li key={i}>{item}</li>)}
-                </ul>
-              ) : <Text type="secondary">无</Text>}
-            </Descriptions.Item>
-            <Descriptions.Item label="求助/需要决策">
-              {selectedStandup.decisions_needed?.length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
-                  {selectedStandup.decisions_needed.map((item, i) => <li key={i}>{item}</li>)}
-                </ul>
-              ) : <Text type="secondary">无</Text>}
-            </Descriptions.Item>
-          </Descriptions>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '60vh', overflowY: 'auto', paddingRight: 8 }}>
+            <StandupSection icon={<CheckCircleOutlined style={{color: '#52c41a'}}/>} title="昨日完成" items={selectedStandup.yesterday_done} />
+            <StandupSection icon={<ClockCircleOutlined style={{color: '#1677ff'}}/>} title="今日计划" items={selectedStandup.today_plan} />
+            <StandupSection icon={<StopOutlined style={{color: '#faad14'}}/>} title="阻塞项" items={selectedStandup.blockers} />
+            <StandupSection icon={<WarningOutlined style={{color: '#ff4d4f'}}/>} title="风险预警" items={selectedStandup.risks} />
+            <StandupSection icon={<QuestionCircleOutlined style={{color: '#722ed1'}}/>} title="求助/需要决策" items={selectedStandup.decisions_needed} />
+          </div>
         )}
       </Modal>
     </div>
   );
 }
+
+const StandupSection = ({ icon, title, items }) => (
+  <div style={{ background: '#fafafa', borderRadius: 8, padding: '16px', border: '1px solid #f0f0f0' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <span style={{ fontSize: 16 }}>{icon}</span>
+      <span style={{ fontWeight: 600, color: '#262626' }}>{title}</span>
+    </div>
+    {items?.length > 0 ? (
+      <ul style={{ margin: 0, paddingLeft: 24, color: '#595959', lineHeight: 1.6 }}>
+        {items.map((item, i) => <li key={i}>{item}</li>)}
+      </ul>
+    ) : (
+      <Text type="secondary" style={{ paddingLeft: 24 }}>无</Text>
+    )}
+  </div>
+);
