@@ -106,6 +106,29 @@ class FeishuAdapter:
         self.dry_run = dry_run
         self.last_reaction_error: Optional[str] = None
         self.audit_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None
+        self._token_cache: Optional[str] = None
+        self._token_expires: float = 0
+
+    def _get_tenant_access_token(self) -> str:
+        if self._token_cache and self._token_expires > time.time():
+            return self._token_cache
+        
+        import urllib.request
+        import json
+        
+        url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+        data = json.dumps({"app_id": self.config.app_id, "app_secret": self.config.app_secret}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json; charset=utf-8"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                resp_data = json.loads(response.read())
+                if resp_data.get("code") == 0:
+                    self._token_cache = resp_data["tenant_access_token"]
+                    self._token_expires = time.time() + resp_data["expire"] - 60
+                    return self._token_cache
+                raise Exception(f"Token Error: {resp_data}")
+        except Exception as e:
+            raise Exception(f"Network error getting token: {e}")
 
     def set_audit_callback(self, callback: Callable[[str, Dict[str, Any]], None]) -> None:
         self.audit_callback = callback
@@ -217,23 +240,25 @@ class FeishuAdapter:
         self.last_reaction_error = None
         if self.dry_run or not message_id:
             return None
-        cmd = [
-            self.config.lark_cli_path,
-            "im", "reactions", "create",
-            "--as", "bot",
-            "--message-id", message_id,
-            "--data", json.dumps({"reaction_type": {"emoji_type": emoji_type}}),
-        ]
+            
+        import urllib.request
+        import json
+        
         try:
-            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=10)
-            if proc.returncode == 0:
-                raw = self._parse_json_output(proc.stdout)
-                reaction_id = raw.get("data", {}).get("reaction_id") or raw.get("reaction_id")
-                if reaction_id:
-                    return reaction_id
-                self.last_reaction_error = f"reaction created but no reaction_id returned: {proc.stdout.strip()}"
-                return None
-            self.last_reaction_error = proc.stderr.strip() or proc.stdout.strip() or f"exit code {proc.returncode}"
+            token = self._get_tenant_access_token()
+            url = f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reactions"
+            data = json.dumps({"reaction_type": {"emoji_type": emoji_type}}).encode("utf-8")
+            req = urllib.request.Request(url, data=data, headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8"
+            })
+            with urllib.request.urlopen(req, timeout=5) as response:
+                resp_data = json.loads(response.read())
+                if resp_data.get("code") == 0:
+                    reaction_id = resp_data.get("data", {}).get("reaction_id")
+                    if reaction_id:
+                        return reaction_id
+                self.last_reaction_error = f"API returned: {resp_data}"
         except Exception as exc:
             self.last_reaction_error = str(exc)
         return None
@@ -241,15 +266,17 @@ class FeishuAdapter:
     def remove_reaction(self, message_id: str, reaction_id: str) -> None:
         if self.dry_run or not message_id or not reaction_id:
             return
-        cmd = [
-            self.config.lark_cli_path,
-            "im", "reactions", "delete",
-            "--as", "bot",
-            "--message-id", message_id,
-            "--reaction-id", reaction_id,
-        ]
+            
+        import urllib.request
+        
         try:
-            subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=10)
+            token = self._get_tenant_access_token()
+            url = f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/reactions/{reaction_id}"
+            req = urllib.request.Request(url, method="DELETE", headers={
+                "Authorization": f"Bearer {token}"
+            })
+            with urllib.request.urlopen(req, timeout=5) as response:
+                pass
         except Exception:
             pass
 
