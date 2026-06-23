@@ -104,15 +104,15 @@ class ScheduledJobs:
                 f"三、今日计划\n"
                 f"- 张三：xxx\n\n"
                 f"四、阻塞/需要帮助\n"
-                f"1. xxx\n"
+                f"1. [发起人姓名]：xxx\n"
                 f"   - 相关人：xxx\n"
                 f"   - 建议动作：xxx\n\n"
                 f"五、风险/可能延期\n"
-                f"1. xxx\n"
+                f"1. [发起人姓名]：xxx\n"
                 f"   - 风险等级：高 / 中 / 低\n"
                 f"   - 建议动作：xxx\n\n"
                 f"六、需要决策\n"
-                f"1. xxx\n"
+                f"1. [发起人姓名]：xxx\n"
                 f"   - 建议决策人：xxx\n\n"
                 f"请保持格式完全一致，不要输出多余的Markdown代码块符号（如```）。"
             )
@@ -135,10 +135,10 @@ class ScheduledJobs:
         for item in standups:
             lines.append(f"- {item.get('user_name')}：{'；'.join(item.get('today_plan', [])) or '暂无'}")
         lines.extend(["", "四、阻塞/需要帮助"])
-        blockers = [blocker for item in standups for blocker in item.get("blockers", [])]
+        blockers = [(item.get("user_name"), blocker) for item in standups for blocker in item.get("blockers", [])]
         if blockers:
-            for idx, item in enumerate(blockers, 1):
-                lines.extend([f"{idx}. {item}", "   - 相关人：待确认", "   - 建议动作：待确认"])
+            for idx, (name, item) in enumerate(blockers, 1):
+                lines.extend([f"{idx}. {name}：{item}", "   - 相关人：待确认", "   - 建议动作：待确认"])
         else:
             lines.append("暂无。")
         lines.extend(["", "五、风险/可能延期", "暂无。", "", "六、需要决策", "暂无。", "", "七、未提交情况", missing_text])
