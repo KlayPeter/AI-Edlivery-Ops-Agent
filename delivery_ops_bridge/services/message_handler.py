@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from ..adapters.feishu import WORKING_REACTION_EMOJI_TYPE, WORKING_REACTION_EMOJI_TYPES, FeishuAdapter, FeishuEventParser
@@ -27,9 +27,11 @@ from ..models import (
 )
 from ..storage import JsonStore
 from .dashboard import DashboardService
+from .jobs import ScheduledJobs
 from .message_intent import IntentFields, MessageIntent, MessageIntentParser
 from .standup import looks_like_standup, parse_standup
 from .task_parser import ParsedTaskCommand, has_task_intent, parse_due_date_text, parse_task_command
+from .summaries import build_daily_summary, render_daily_summary
 
 
 TAPD_STATUS_IN_PROGRESS = "status_14"
@@ -111,6 +113,10 @@ class MessageHandler:
             original_text = reply_context.get("metadata", {}).get("original_text", "")
             if original_text:
                 message.text = f"{original_text} {message.text}"
+
+        daily_summary_result = self._maybe_handle_daily_summary_command(message)
+        if daily_summary_result:
+            return daily_summary_result
 
         if "生成今日进度看板" in message.text or "生成看板" in message.text or "进度看板" in message.text:
             artifact = self.dashboard.generate()
@@ -247,6 +253,61 @@ class MessageHandler:
             return ai_result
         self._reply(message, "private", "抱歉，我没有识别到有效的指令。\n你可以对我说：创建任务、安排一下，或者向我发送今日站会报告。")
         return {"handled": True, "action": "unrecognized_command", "reason": "no_private_command"}
+
+    def _maybe_handle_daily_summary_command(self, message: SourceMessage) -> Optional[Dict[str, Any]]:
+        text = message.text or ""
+        if not self._looks_like_daily_summary_command(text):
+            return None
+
+        target_day = self._parse_summary_day(text, message)
+        jobs = ScheduledJobs(self.config, self.store, self.feishu, self.dashboard)
+        period = self.config.runtime.daily_summary_period
+        jobs._backfill_group_messages_for_summary(target_day, period)
+        llm = getattr(self.intent_parser, "llm", None) if self.intent_parser else None
+        summary = build_daily_summary(self.store, self.config.feishu.group_chat_id, target_day, llm, period)
+        self.store.save_daily_summary(summary)
+        rendered = render_daily_summary(summary)
+        self.feishu.send_reply_text(message.id, rendered)
+        self.store.append_audit_log(
+            "daily_summary_generated",
+            {
+                "date": target_day.isoformat(),
+                "trigger": "group_command",
+                "source_message_id": message.id,
+            },
+        )
+        return {"handled": True, "action": "daily_summary", "summary_id": summary.id, "date": target_day.isoformat()}
+
+    def _looks_like_daily_summary_command(self, text: str) -> bool:
+        if not text:
+            return False
+        has_summary_keyword = any(keyword in text for keyword in ("日报", "日总结", "群聊总结", "研发总结", "每日总结"))
+        has_action = any(keyword in text for keyword in ("生成", "发", "查看", "看看", "给我", "来一份", "补", "拉", "汇总"))
+        return has_summary_keyword and has_action
+
+    def _parse_summary_day(self, text: str, message: SourceMessage) -> date:
+        explicit = re.search(r"(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})", text)
+        if explicit:
+            year, month, day = (int(part) for part in explicit.groups())
+            return date(year, month, day)
+
+        base_day = self._message_day(message)
+        if "前天" in text:
+            return base_day - timedelta(days=2)
+        if any(keyword in text for keyword in ("昨日", "昨天")):
+            return base_day - timedelta(days=1)
+        if any(keyword in text for keyword in ("今日", "今天")):
+            return base_day
+        return base_day
+
+    def _message_day(self, message: SourceMessage) -> date:
+        value = str(message.sent_at or "")
+        if value.isdigit():
+            return datetime.fromtimestamp(int(value) / 1000.0).date()
+        try:
+            return datetime.fromisoformat(value.replace("Z", "")).date()
+        except ValueError:
+            return date.today()
 
     def _maybe_reply_missing_task_field(self, message: SourceMessage, source: str, reason: str) -> Optional[Dict[str, Any]]:
         prompts = {

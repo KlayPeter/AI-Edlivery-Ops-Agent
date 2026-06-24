@@ -8,7 +8,7 @@ CONFIG="${DELIVERY_OPS_CONFIG:-config/config.example.json}"
 TASK="${1:-}"
 
 if [[ -z "$TASK" ]]; then
-  echo "Usage: scripts/run.sh {standup-push|standup-remind|standup-summary|daily-summary|dashboard|overdue-scan}"
+  echo "Usage: scripts/run.sh {standup-push|standup-second-remind|standup-mark-missing|standup-summary|daily-summary|dashboard|overdue-scan}"
   exit 1
 fi
 

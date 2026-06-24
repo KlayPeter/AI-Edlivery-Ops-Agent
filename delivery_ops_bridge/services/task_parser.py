@@ -136,8 +136,9 @@ def _extract_title(text: str) -> str:
         match = re.search(pattern, text, re.S)
         if match:
             value = match.group(1).strip()
-            value = re.split(r"(?:截止时间|截止|优先级|验收标准|验收|标准|要求)\s*[:：]?", value)[0].strip()
-            value = re.sub(r"^@\S+\s*", "", value).strip(" ，,。\n")
+            value = re.split(r"(?:截止时间|截止|交付时间|交付|优先级|验收标准|验收|标准|要求)\s*[:：]?", value)[0].strip()
+            value = re.sub(r"^(?:@\S+\s*)+", "", value).strip(" ，,。\n")
+            value = re.sub(r"(?:\s*@\S+)+$", "", value).strip(" ，,。\n")
             if value:
                 return value
     return ""

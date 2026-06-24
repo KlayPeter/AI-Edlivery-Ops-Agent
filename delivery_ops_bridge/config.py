@@ -8,6 +8,24 @@ from typing import Any, Dict, List
 
 from .models import Member
 
+DEFAULT_SCHEDULE: Dict[str, Any] = {
+    "standup_push": "10:00",
+    "standup_push_enabled": True,
+    "standup_second_remind": "10:30",
+    "standup_second_remind_enabled": True,
+    "standup_mark_missing": "11:00",
+    "standup_mark_missing_enabled": True,
+    "standup_summary": "11:10",
+    "standup_summary_enabled": True,
+    "overdue_scan": "10:00",
+    "overdue_scan_enabled": True,
+    "daily_summary": "18:30",
+    "daily_summary_enabled": True,
+    "dashboard": "18:40",
+    "dashboard_enabled": True,
+    "task_reminder_frequency_hours": 24,
+}
+
 
 @dataclass
 class ProjectConfig:
@@ -54,6 +72,8 @@ class RuntimeConfig:
     public_missing_standups: bool = False
     public_overdue_owners: bool = False
     daily_summary_period: str = "00:00-23:59"
+    daily_summary_fetch_history: bool = True
+    daily_summary_fetch_page_size: int = 50
 
 
 @dataclass
@@ -147,6 +167,7 @@ def build_config(raw: Dict[str, Any], raw_path: Path | None = None) -> AppConfig
 
     runtime = RuntimeConfig(**raw.get("runtime", {}))
     members = [Member(**member) for member in raw.get("members", [])]
+    schedule = _normalize_schedule(raw.get("schedule", {}))
     return AppConfig(
         project=project,
         feishu=feishu,
@@ -154,7 +175,7 @@ def build_config(raw: Dict[str, Any], raw_path: Path | None = None) -> AppConfig
         ai=ai,
         runtime=runtime,
         members=members,
-        schedule=raw.get("schedule", {}),
+        schedule=schedule,
     )
 
 
@@ -170,3 +191,14 @@ def write_config(path: Path, payload: Dict[str, Any]) -> None:
         json.dump(payload, fp, ensure_ascii=False, indent=2)
         fp.write("\n")
     os.replace(tmp, path)
+
+
+def _normalize_schedule(raw_schedule: Dict[str, Any]) -> Dict[str, Any]:
+    schedule = dict(DEFAULT_SCHEDULE)
+    source = raw_schedule if isinstance(raw_schedule, dict) else {}
+    schedule.update(source)
+    if "standup_second_remind" not in source and "standup_remind" in source:
+        schedule["standup_second_remind"] = source["standup_remind"]
+    if "standup_second_remind_enabled" not in source and "standup_remind_enabled" in source:
+        schedule["standup_second_remind_enabled"] = source["standup_remind_enabled"]
+    return schedule

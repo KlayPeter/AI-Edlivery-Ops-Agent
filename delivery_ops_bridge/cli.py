@@ -14,6 +14,17 @@ from .services.dashboard import DashboardService
 from .services.jobs import ScheduledJobs
 from .storage import JsonStore
 
+JOB_CONFIG_KEYS = {
+    "standup-push": "standup_push",
+    "standup-remind": "standup_second_remind",
+    "standup-second-remind": "standup_second_remind",
+    "standup-mark-missing": "standup_mark_missing",
+    "standup-summary": "standup_summary",
+    "daily-summary": "daily_summary",
+    "dashboard": "dashboard",
+    "overdue-scan": "overdue_scan",
+}
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="delivery-ops-bridge")
@@ -29,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     handle_parser.add_argument("--pretty", action="store_true")
 
     job_parser = subparsers.add_parser("job", help="Run a scheduled job")
-    job_parser.add_argument("name", choices=["standup-push", "standup-remind", "standup-summary", "daily-summary", "dashboard", "overdue-scan"])
+    job_parser.add_argument("name", choices=list(JOB_CONFIG_KEYS))
     job_parser.add_argument("--date", default=None, help="YYYY-MM-DD")
 
     args = parser.parse_args(argv)
@@ -52,7 +63,8 @@ def main(argv: list[str] | None = None) -> int:
 def _run_job(config_path: str | None, dry_run: bool, name: str, day_text: str | None):
     config = load_config(config_path)
     
-    is_enabled = config.schedule.get(f"{name}_enabled", True)
+    config_key = JOB_CONFIG_KEYS[name]
+    is_enabled = config.schedule.get(f"{config_key}_enabled", True)
     if not is_enabled:
         return {"ok": True, "message": f"任务 {name} 已在配置文件中被禁用，本次跳过执行。"}
         
@@ -65,7 +77,9 @@ def _run_job(config_path: str | None, dry_run: bool, name: str, day_text: str | 
     day = date.fromisoformat(day_text) if day_text else None
     methods = {
         "standup-push": jobs.standup_push,
-        "standup-remind": jobs.standup_remind,
+        "standup-remind": jobs.standup_second_remind,
+        "standup-second-remind": jobs.standup_second_remind,
+        "standup-mark-missing": jobs.standup_mark_missing,
         "standup-summary": jobs.standup_summary,
         "daily-summary": jobs.daily_summary,
         "dashboard": jobs.dashboard_generate,

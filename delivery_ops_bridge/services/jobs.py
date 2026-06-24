@@ -56,14 +56,45 @@ class ScheduledJobs:
         return {"sent": count}
 
     def standup_remind(self, day: date | None = None) -> Dict[str, int]:
+        return self._standup_remind(day, stage="first")
+
+    def standup_second_remind(self, day: date | None = None) -> Dict[str, int]:
+        return self._standup_remind(day, stage="second")
+
+    def _standup_remind(self, day: date | None = None, stage: str = "first") -> Dict[str, int]:
         day = day or date.today()
-        submitted = {item.get("open_id") for item in self.store.list_standups(day.isoformat())}
+        missing = self._missing_standup_members(day)
         count = 0
-        for member in self.config.members:
-            if member.is_active and member.open_id not in submitted:
-                self.feishu.send_private_text(member.open_id, f"{member.name}，今日站会还未提交，请方便时补充一下。")
-                count += 1
-        return {"reminded": count}
+        stage_text = "今日站会还未提交，请方便时补充一下。"
+        if stage == "second":
+            stage_text = "今日站会仍未提交，如有阻塞也可以直接简要回复，我会帮你记录。"
+        for member in missing:
+            self.feishu.send_private_text(member.open_id, f"{member.name}，{stage_text}")
+            count += 1
+        self.store.append_audit_log(
+            "standup_reminder_sent",
+            {
+                "date": day.isoformat(),
+                "stage": stage,
+                "reminded": count,
+                "missing_open_ids": [member.open_id for member in missing],
+                "missing_names": [member.name for member in missing],
+            },
+        )
+        return {"reminded": count, "stage": stage}
+
+    def standup_mark_missing(self, day: date | None = None) -> Dict[str, int]:
+        day = day or date.today()
+        missing = self._missing_standup_members(day)
+        payload = {
+            "date": day.isoformat(),
+            "missing": len(missing),
+            "missing_open_ids": [member.open_id for member in missing],
+            "missing_names": [member.name for member in missing],
+        }
+        self.store.save_standup_missing(day.isoformat(), payload)
+        self.store.append_audit_log("standup_missing_marked", payload)
+        return {"missing": len(missing)}
 
     def standup_summary(self, day: date | None = None) -> Dict[str, int]:
         day = day or date.today()
@@ -127,6 +158,14 @@ class ScheduledJobs:
                 text += f"\n\n七、未提交情况\n{missing_text}"
                 self.feishu.send_group_text(text, self.config.feishu.group_chat_id)
                 return {"submitted": len(standups), "missing": len(missing)}
+            self.store.append_audit_log(
+                "ai_standup_summary_failed",
+                {
+                    "date": day.isoformat(),
+                    "reason": res.error or "empty_response",
+                    "submitted": len(standups),
+                },
+            )
 
         # Fallback
         lines = [f"【今日站会汇总｜{day.isoformat()}】", "", "一、团队今日重点", "1. 暂无", "", "二、昨日完成"]
@@ -147,7 +186,9 @@ class ScheduledJobs:
         return {"submitted": len(standups), "missing": len(missing)}
 
     def daily_summary(self, day: date | None = None) -> Dict[str, str]:
+        day = day or date.today()
         period = self.config.runtime.daily_summary_period
+        self._backfill_group_messages_for_summary(day, period)
         summary = build_daily_summary(self.store, self.config.feishu.group_chat_id, day, self.llm, period)
         self.store.save_daily_summary(summary)
         text = render_daily_summary(summary)
@@ -173,6 +214,7 @@ class ScheduledJobs:
             text = f"今日进度看板已生成，但飞书云盘发布失败：\n{self.feishu.explain_error(publish)}\n本地文件：{artifact.html_path}"
 
         self.feishu.send_group_text(text, self.config.feishu.group_chat_id)
+        self.store.append_audit_log("dashboard_generated", {"artifact_path": artifact.html_path, "public_url": artifact.public_url or "", "trigger": "job"})
         return {"artifact": artifact.html_path, "public_url": artifact.public_url or ""}
 
     def overdue_scan(self, day: date | None = None) -> Dict[str, int]:
@@ -264,3 +306,71 @@ class ScheduledJobs:
             return datetime.fromisoformat(value.replace("Z", ""))
         except ValueError:
             return None
+
+    def _missing_standup_members(self, day: date) -> List[Any]:
+        submitted = {item.get("open_id") for item in self.store.list_standups(day.isoformat())}
+        return [
+            member
+            for member in self.config.members
+            if member.is_active and member.open_id not in submitted
+        ]
+
+    def _backfill_group_messages_for_summary(self, day: date, period: str) -> None:
+        if not self.config.runtime.daily_summary_fetch_history:
+            return
+        if not self.config.feishu.group_chat_id:
+            return
+
+        start_time, end_time = self._summary_period_range(day, period)
+        try:
+            history = self.feishu.fetch_chat_history(
+                self.config.feishu.group_chat_id,
+                start_time,
+                end_time,
+                page_size=self.config.runtime.daily_summary_fetch_page_size,
+            )
+        except Exception as exc:
+            self.store.append_audit_log(
+                "daily_summary_history_sync_failed",
+                {
+                    "date": day.isoformat(),
+                    "chat_id": self.config.feishu.group_chat_id,
+                    "reason": str(exc),
+                },
+            )
+            return
+
+        synced = 0
+        inserted = 0
+        for message in history:
+            existed = self.store.get_source_message(message.id) is not None
+            self.store.save_source_message(message)
+            synced += 1
+            if not existed:
+                inserted += 1
+
+        self.store.append_audit_log(
+            "daily_summary_history_synced",
+            {
+                "date": day.isoformat(),
+                "chat_id": self.config.feishu.group_chat_id,
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "synced": synced,
+                "inserted": inserted,
+            },
+        )
+
+    def _summary_period_range(self, day: date, period: str) -> tuple[datetime, datetime]:
+        start_str, end_str = period.split("-") if "-" in period else ("00:00", "23:59")
+        h_start, m_start = map(int, start_str.split(":"))
+        h_end, m_end = map(int, end_str.split(":"))
+
+        if h_start > h_end or (h_start == h_end and m_start >= m_end):
+            start_day = day - timedelta(days=1)
+        else:
+            start_day = day
+
+        start_time = datetime(start_day.year, start_day.month, start_day.day, h_start, m_start, 0)
+        end_time = datetime(day.year, day.month, day.day, h_end, m_end, 59, 999999)
+        return start_time, end_time

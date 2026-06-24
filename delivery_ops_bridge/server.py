@@ -17,10 +17,11 @@ from .config import load_config, resolve_config_path, write_config
 from .services.dashboard import DashboardService
 from .services.message_intent import MessageIntentParser
 from .services.message_handler import MessageHandler
+from .services.scheduler import InProcessScheduler
 from .storage import JsonStore
 
 MAX_JSON_BODY_BYTES = 1024 * 1024
-VALID_JOBS = {"standup-push", "standup-remind", "standup-summary", "overdue-scan", "daily-summary", "dashboard"}
+VALID_JOBS = {"standup-push", "standup-remind", "standup-second-remind", "standup-mark-missing", "standup-summary", "overdue-scan", "daily-summary", "dashboard"}
 
 
 class RequestBodyTooLarge(ValueError):
@@ -50,6 +51,7 @@ def build_handler(config_path: str | None = None, dry_run: bool = False) -> Mess
 
 class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
     bridge: MessageHandler = None  # type: ignore
+    scheduler: InProcessScheduler | None = None
     _processed_events: Dict[str, float] = {}
 
     def _route_path(self) -> str:
@@ -127,7 +129,10 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                             
                             if event_type:
                                 item_type = item.get("action") or item.get("event_type")
-                                if item_type != event_type:
+                                if event_type == "ai_*":
+                                    if not str(item_type).startswith("ai_"):
+                                        continue
+                                elif item_type != event_type:
                                     continue
                                     
                             ts = item.get("timestamp", "")
@@ -410,6 +415,12 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
 def run_server(config_path: str | None = None, host: str = "0.0.0.0", port: int | None = None, dry_run: bool = False) -> None:
     handler = build_handler(config_path, dry_run=dry_run)
     DeliveryOpsRequestHandler.bridge = handler
+    scheduler = InProcessScheduler(lambda: DeliveryOpsRequestHandler.bridge)
+    DeliveryOpsRequestHandler.scheduler = scheduler
+    scheduler.start()
     server = ThreadingHTTPServer((host, port or int(os.environ.get("PORT", "8080"))), DeliveryOpsRequestHandler)
     print(f"Delivery Ops Bridge listening on http://{host}:{server.server_port}")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        scheduler.stop()

@@ -182,13 +182,13 @@ JSON
 
 ## 模块 1 / 模块 3 自动任务
 
-模块 1（每日群聊总结）和模块 3（站会收集 / 提醒 / 汇总）都已经做成了可直接挂到 `crontab` 的命令。
+模块 1（每日群聊总结）和模块 3（站会收集 / 提醒 / 汇总）已经接入服务内调度器。只要 webhook 服务常驻，系统会按 `config/config.json` 里的 `schedule` 自动触发日报、站会、看板和超期扫描。
 
 ### 先决条件
 
 1. **Webhook 服务需要常驻**
 
-模块 3 不是只有“定时发提醒”这么简单，它还要持续接收成员私聊机器人的站会回复。所以除了 `crontab`，还需要这个服务长期运行：
+模块 3 不是只有“定时发提醒”这么简单，它还要持续接收成员私聊机器人的站会回复。服务启动后会同时负责 webhook 处理和配置化定时任务：
 
 ```bash
 python3 -m delivery_ops_bridge.cli --config config/config.json server --host 127.0.0.1 --port 8090
@@ -198,52 +198,15 @@ python3 -m delivery_ops_bridge.cli --config config/config.json server --host 127
 
 如果现在还在用 `localhost.run` / `localtunnel` 这种临时地址，它也要一直挂着。生产环境建议直接放到一台云主机，用固定域名反代到 `8090`。
 
-3. **crontab 负责触发定时动作**
-
-当前模块 1 / 3 / 看板 / 超期扫描的定时样例已经写在：
-
-[scripts/crontab.example](/Users/admin/Desktop/Peter/AI-Delivery-Ops-Agent/scripts/crontab.example)
-
-### 安装 crontab
-
-先确认项目绝对路径。当前这台机器是：
-
-```bash
-cd /Users/admin/Desktop/Peter/AI-Delivery-Ops-Agent
-pwd
-```
-
-然后编辑 crontab：
-
-```bash
-crontab -e
-```
-
-把下面这组命令贴进去，并把路径保持为你的真实项目目录：
-
-```cron
-0 9 * * 1-5   cd /Users/admin/Desktop/Peter/AI-Delivery-Ops-Agent && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh standup-push
-30 9 * * 1-5  cd /Users/admin/Desktop/Peter/AI-Delivery-Ops-Agent && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh standup-remind
-10 11 * * 1-5 cd /Users/admin/Desktop/Peter/AI-Delivery-Ops-Agent && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh standup-summary
-0 10 * * *    cd /Users/admin/Desktop/Peter/AI-Delivery-Ops-Agent && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh overdue-scan
-30 18 * * *   cd /Users/admin/Desktop/Peter/AI-Delivery-Ops-Agent && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh daily-summary
-40 18 * * *   cd /Users/admin/Desktop/Peter/AI-Delivery-Ops-Agent && DELIVERY_OPS_CONFIG=config/config.json scripts/run.sh dashboard
-```
-
-装好后查看：
-
-```bash
-crontab -l
-```
-
 ### 这组定时任务分别做什么
 
-- `standup-push`：工作日 09:00 私聊每位成员发站会模板
-- `standup-remind`：工作日 09:30 私聊催未提交成员
-- `standup-summary`：工作日 11:10 汇总站会并发群
-- `daily-summary`：每天 18:30 发群聊日报
-- `dashboard`：每天 18:40 生成并发布看板
-- `overdue-scan`：每天 10:00 扫超期任务并私聊负责人
+- `standup-push`：默认 10:00 私聊每位成员发站会模板
+- `standup-second-remind`：默认 10:30 私聊催未提交成员
+- `standup-mark-missing`：默认 11:00 记录未提交名单
+- `standup-summary`：默认 11:10 汇总站会并发群
+- `daily-summary`：默认 18:30 发群聊日报
+- `dashboard`：默认 18:40 生成并发布看板
+- `overdue-scan`：默认 10:00 扫超期任务并私聊负责人
 
 ## 定时任务命令
 
@@ -251,7 +214,8 @@ crontab -l
 
 ```bash
 python3 -m delivery_ops_bridge.cli --config config/config.json job standup-push
-python3 -m delivery_ops_bridge.cli --config config/config.json job standup-remind
+python3 -m delivery_ops_bridge.cli --config config/config.json job standup-second-remind
+python3 -m delivery_ops_bridge.cli --config config/config.json job standup-mark-missing
 python3 -m delivery_ops_bridge.cli --config config/config.json job standup-summary
 python3 -m delivery_ops_bridge.cli --config config/config.json job overdue-scan
 python3 -m delivery_ops_bridge.cli --config config/config.json job daily-summary
@@ -264,7 +228,7 @@ python3 -m delivery_ops_bridge.cli --config config/config.json job dashboard
 python3 -m delivery_ops_bridge.cli --config config/config.json --dry-run job daily-summary
 ```
 
-crontab 示例见：
+如需使用系统级兜底调度，仍可参考 crontab 示例：
 
 [scripts/crontab.example](/Users/admin/Desktop/Peter/AI-Delivery-Ops-Agent/scripts/crontab.example)
 

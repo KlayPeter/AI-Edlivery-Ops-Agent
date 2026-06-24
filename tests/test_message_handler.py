@@ -5,8 +5,9 @@ from datetime import date, datetime, timedelta
 
 from delivery_ops_bridge.adapters.feishu import WORKING_REACTION_EMOJI_TYPE, SendResult
 from delivery_ops_bridge.adapters.llm import LLMResult
-from delivery_ops_bridge.models import BotMessageContext, Task, utc_now_iso
+from delivery_ops_bridge.models import BotMessageContext, SourceMessage, Task, utc_now_iso
 from delivery_ops_bridge.services.jobs import ScheduledJobs
+from delivery_ops_bridge.services.scheduler import InProcessScheduler
 from delivery_ops_bridge.services.message_intent import IntentFields, IntentTaskRef, MessageIntent
 from delivery_ops_bridge.services.summaries import build_daily_summary, render_daily_summary
 from tests.conftest import feishu_event, mention
@@ -30,6 +31,11 @@ class FakeSummaryLLM:
     def chat(self, system_prompt, user_message):
         self.calls.append((system_prompt, user_message))
         return LLMResult(ok=True, content=json.dumps({"items": self.items}, ensure_ascii=False))
+
+
+class FailingLLM:
+    def chat(self, system_prompt, user_message):
+        return LLMResult(ok=False, error="boom")
 
 
 def test_url_like_task_create_creates_tapd_story_and_task(handler):
@@ -498,6 +504,76 @@ def test_dashboard_generation(handler):
     assert "今日站会摘要" in html
 
 
+def test_group_command_generates_yesterday_daily_summary(handler):
+    replies = []
+    history_calls = []
+    handler.feishu.fetch_chat_history = lambda chat_id, start_time, end_time, page_size=50: history_calls.append(
+        (chat_id, start_time, end_time, page_size)
+    ) or [
+        SourceMessage(
+            id="om_yesterday_summary_item",
+            chat_id="oc_group",
+            chat_type="group",
+            sender_open_id="ou_zhangsan",
+            sender_name="张三",
+            text="测试环境无法登录，影响 App 回归，需要后端协助。资料：https://example.com/doc",
+            message_type="text",
+            sent_at="2026-06-17T10:00:00Z",
+            raw_payload={"source": "history_sync"},
+            mentions=[],
+        )
+    ]
+    handler.feishu.send_reply_text = lambda message_id, text: replies.append((message_id, text)) or SendResult(ok=True, raw={})
+
+    result = handler.handle_event(
+        feishu_event(
+            "@AI交付助理 生成昨日的日报",
+            message_id="om_generate_yesterday_summary",
+            mentions=[mention("ou_bot", "AI交付助理")],
+        )
+    )
+
+    assert result["action"] == "daily_summary"
+    assert result["date"] == "2026-06-17"
+    assert history_calls
+    assert replies[0][0] == "om_generate_yesterday_summary"
+    assert "测试环境无法登录" in replies[0][1]
+    assert "https://example.com/doc" in replies[0][1]
+    assert handler.store.get_source_message("om_yesterday_summary_item") is not None
+
+
+def test_group_command_generates_explicit_date_daily_summary(handler):
+    replies = []
+    handler.feishu.fetch_chat_history = lambda chat_id, start_time, end_time, page_size=50: [
+        SourceMessage(
+            id="om_date_summary_item",
+            chat_id="oc_group",
+            chat_type="group",
+            sender_open_id="ou_zhangsan",
+            sender_name="张三",
+            text="结论：今天先暂停回归，等测试环境恢复。",
+            message_type="text",
+            sent_at="2026-06-16T10:00:00Z",
+            raw_payload={"source": "history_sync"},
+            mentions=[],
+        )
+    ]
+    handler.feishu.send_reply_text = lambda message_id, text: replies.append((message_id, text)) or SendResult(ok=True, raw={})
+
+    result = handler.handle_event(
+        feishu_event(
+            "@AI交付助理 生成 2026-06-16 的日报",
+            message_id="om_generate_date_summary",
+            mentions=[mention("ou_bot", "AI交付助理")],
+        )
+    )
+
+    assert result["action"] == "daily_summary"
+    assert result["date"] == "2026-06-16"
+    assert replies[0][0] == "om_generate_date_summary"
+    assert "今天先暂停回归" in replies[0][1]
+
+
 def test_blocked_task_saves_structured_info_and_enters_views_after_24h(handler):
     created = handler.handle_event(
         feishu_event(
@@ -585,6 +661,102 @@ def test_overdue_scan_sends_staged_reminders_and_logs_status(handler):
     assert second == {"due_tomorrow": 0, "due_today": 0, "overdue_day1": 0, "overdue_risk": 0}
     assert private_messages == []
     assert group_messages == []
+
+
+def test_standup_second_remind_and_mark_missing_records_missing_members(handler):
+    private_messages = []
+    handler.feishu.send_private_text = lambda open_id, text: private_messages.append((open_id, text)) or SendResult(ok=True, raw={})
+    jobs = ScheduledJobs(handler.config, handler.store, handler.feishu, handler.dashboard)
+
+    reminded = jobs.standup_second_remind(date(2026, 6, 22))
+    marked = jobs.standup_mark_missing(date(2026, 6, 22))
+
+    assert reminded == {"reminded": 3, "stage": "second"}
+    assert marked == {"missing": 3}
+    assert any("仍未提交" in text for _, text in private_messages)
+    missing = handler.store.get_standup_missing("2026-06-22")
+    assert missing["missing_names"] == ["Figo", "张三", "李四"]
+    logs = (handler.config.data_path / "logs" / "audit.jsonl").read_text(encoding="utf-8")
+    assert "standup_reminder_sent" in logs
+    assert "standup_missing_marked" in logs
+
+
+def test_daily_summary_backfills_group_history_before_rendering(handler):
+    history_calls = []
+    group_messages = []
+
+    handler.feishu.fetch_chat_history = lambda chat_id, start_time, end_time, page_size=50: history_calls.append(
+        (chat_id, start_time, end_time, page_size)
+    ) or [
+        SourceMessage(
+            id="om_history_summary_1",
+            chat_id="oc_group",
+            chat_type="group",
+            sender_open_id="ou_zhangsan",
+            sender_name="张三",
+            text="测试环境无法登录，影响 App 回归，需要后端协助。资料：https://example.com/doc",
+            message_type="text",
+            sent_at="2026-06-18T10:00:00Z",
+            raw_payload={"source": "history_sync"},
+            mentions=[],
+        ),
+        SourceMessage(
+            id="om_history_summary_2",
+            chat_id="oc_group",
+            chat_type="group",
+            sender_open_id="ou_zhangsan",
+            sender_name="张三",
+            text="@所有人 OSS 本月流量已经用到 95%，请上传大文件时尽量压缩。",
+            message_type="text",
+            sent_at="2026-06-18T11:00:00Z",
+            raw_payload={"source": "history_sync"},
+            mentions=[],
+        ),
+    ]
+    handler.feishu.send_group_text = lambda text, chat_id=None: group_messages.append((chat_id, text)) or SendResult(ok=True, raw={})
+    jobs = ScheduledJobs(handler.config, handler.store, handler.feishu, handler.dashboard)
+
+    result = jobs.daily_summary(date(2026, 6, 18))
+
+    assert result["summary_id"] == "summary-2026-06-18"
+    assert history_calls
+    assert handler.store.get_source_message("om_history_summary_1") is not None
+    assert handler.store.get_source_message("om_history_summary_2") is not None
+    assert group_messages
+    assert "测试环境无法登录" in group_messages[0][1]
+    assert "https://example.com/doc" in group_messages[0][1]
+    logs = (handler.config.data_path / "logs" / "audit.jsonl").read_text(encoding="utf-8")
+    assert "daily_summary_history_synced" in logs
+
+
+def test_daily_summary_logs_history_sync_failure_and_falls_back(handler):
+    group_messages = []
+    handler.feishu.fetch_chat_history = lambda chat_id, start_time, end_time, page_size=50: (_ for _ in ()).throw(RuntimeError("history unavailable"))
+    handler.feishu.send_group_text = lambda text, chat_id=None: group_messages.append((chat_id, text)) or SendResult(ok=True, raw={})
+    handler.handle_event(feishu_event("测试环境无法登录。", message_id="om_summary_history_fallback", mentions=[]))
+    jobs = ScheduledJobs(handler.config, handler.store, handler.feishu, handler.dashboard)
+
+    jobs.daily_summary(date(2026, 6, 18))
+
+    assert group_messages
+    assert "测试环境无法登录" in group_messages[0][1]
+    logs = (handler.config.data_path / "logs" / "audit.jsonl").read_text(encoding="utf-8")
+    assert "daily_summary_history_sync_failed" in logs
+
+
+def test_scheduler_runs_configured_job_once(handler):
+    handler.config.schedule = {
+        "standup_mark_missing": "11:00",
+        "standup_mark_missing_enabled": True,
+    }
+    scheduler = InProcessScheduler(lambda: handler)
+
+    first = scheduler.tick(datetime(2026, 6, 22, 11, 0))
+    second = scheduler.tick(datetime(2026, 6, 22, 11, 0))
+
+    assert first == {"standup-mark-missing": "completed"}
+    assert second == {}
+    assert handler.store.get_standup_missing("2026-06-22")["missing"] == 3
 
 
 def test_private_reply_accept_uses_task_context(handler):
@@ -776,7 +948,6 @@ def test_daily_summary_classifies_group_messages_with_traceability(handler):
     assert summary.shares[0]["source_message_ids"] == ["om_summary_trace"]
     assert "四、决策结论" in rendered
     assert "六、资料分享" in rendered
-    assert "om_summary_trace" in rendered
 
 
 def test_daily_summary_prefers_ai_classification_with_traceability(handler):
@@ -824,3 +995,13 @@ def test_daily_summary_ai_confidence_filter_and_possible_label(handler):
 
     assert [item["title"] for item in summary.blockers] == ["可能：测试环境阻塞"]
     assert summary.risks == []
+
+
+def test_daily_summary_logs_ai_failures_and_falls_back_to_rules(handler):
+    handler.handle_event(feishu_event("测试环境无法登录。", message_id="om_summary_ai_fail", mentions=[]))
+
+    summary = build_daily_summary(handler.store, "oc_group", date(2026, 6, 18), FailingLLM())
+
+    assert summary.blockers
+    logs = (handler.config.data_path / "logs" / "audit.jsonl").read_text(encoding="utf-8")
+    assert "ai_daily_summary_failed" in logs

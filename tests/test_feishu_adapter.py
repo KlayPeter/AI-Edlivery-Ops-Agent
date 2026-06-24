@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 
-from delivery_ops_bridge.adapters.feishu import FeishuAdapter
+from delivery_ops_bridge.adapters.feishu import FeishuAdapter, FeishuEventParser
 from delivery_ops_bridge.config import load_config
 
 
@@ -101,3 +101,29 @@ def test_send_text_records_audit_event(config_path):
             },
         )
     ]
+
+
+def test_history_item_parser_extracts_message_content_and_sender(config_path):
+    config = load_config(str(config_path))
+    adapter = FeishuAdapter(config.feishu, dry_run=True)
+    parser = FeishuEventParser(bot_open_id=config.feishu.bot_open_id)
+
+    message = adapter._history_item_to_source_message(
+        {
+            "message_id": "om_history_1",
+            "chat_id": "oc_group",
+            "chat_type": "group",
+            "message_type": "text",
+            "create_time": "1782183417813",
+            "body": {"content": "{\"text\":\"推荐个超好用的 VS Code 插件 Error Lens\"}"},
+            "sender": {"id": {"open_id": "ou_zhangsan"}, "name": "张三"},
+        },
+        parser,
+    )
+
+    assert message is not None
+    assert message.id == "om_history_1"
+    assert message.chat_id == "oc_group"
+    assert message.sender_open_id == "ou_zhangsan"
+    assert message.sender_name == "张三"
+    assert "Error Lens" in message.text

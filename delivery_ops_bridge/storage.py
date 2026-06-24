@@ -27,6 +27,7 @@ class JsonStore:
             "tasks",
             "updates",
             "standups",
+            "standup_missing",
             "summaries",
             "dashboards",
             "logs",
@@ -119,6 +120,15 @@ class JsonStore:
             [self._read_json(item, {}) for item in path.glob("*.json")],
             key=lambda item: item.get("user_name", ""),
         )
+
+    def save_standup_missing(self, date: str, payload: Dict[str, Any]) -> None:
+        self._write_json(self.data_dir / "standup_missing" / f"{date}.json", payload)
+
+    def get_standup_missing(self, date: str) -> Optional[Dict[str, Any]]:
+        path = self.data_dir / "standup_missing" / f"{date}.json"
+        if not path.exists():
+            return None
+        return self._read_json(path, None)
 
     def save_daily_summary(self, summary: DailySummary) -> None:
         self._write_json(self.data_dir / "summaries" / f"{summary.date}.json", to_dict(summary))

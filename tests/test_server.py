@@ -92,3 +92,15 @@ def test_config_save_reloads_runtime_paths(config_path: Path):
         (dashboard_dir / "reloaded.html").write_text("<html>ok</html>", encoding="utf-8")
 
         assert get_json(f"{server.base_url}/api/dashboards") == {"dashboards": ["reloaded.html"]}
+
+
+def test_logs_endpoint_filters_all_ai_events(config_path: Path):
+    handler = build_handler(str(config_path), dry_run=True)
+    handler.store.append_audit_log("ai_intent_failed", {"reason": "boom"})
+    handler.store.append_audit_log("standup_saved", {"standup_id": "standup-1"})
+
+    with RunningServer(config_path) as server:
+        payload = get_json(f"{server.base_url}/api/logs?eventType=ai_*")
+
+    assert payload["total"] == 1
+    assert payload["logs"][0]["event_type"] == "ai_intent_failed"

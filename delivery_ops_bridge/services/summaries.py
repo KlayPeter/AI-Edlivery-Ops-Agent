@@ -445,10 +445,7 @@ def _sender_name(item: Dict[str, Any]) -> str:
 
 
 def _source_suffix(item: Dict[str, Any]) -> str:
-    ids = item.get("source_message_ids") or []
-    if not ids:
-        return ""
-    return f"（来源：{', '.join(str(item_id) for item_id in ids)}）"
+    return ""
 
 
 def _blocked_long_enough(task: Dict[str, Any]) -> bool:

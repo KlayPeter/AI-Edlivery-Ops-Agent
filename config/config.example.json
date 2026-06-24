@@ -33,7 +33,10 @@
     "data_dir": "data",
     "public_base_url": "",
     "public_missing_standups": false,
-    "public_overdue_owners": false
+    "public_overdue_owners": false,
+    "daily_summary_period": "00:00-23:59",
+    "daily_summary_fetch_history": true,
+    "daily_summary_fetch_page_size": 50
   },
   "members": [
     {
@@ -44,12 +47,20 @@
     }
   ],
   "schedule": {
-    "standup_push": "09:00",
-    "standup_remind": "09:30",
+    "standup_push": "10:00",
+    "standup_push_enabled": true,
+    "standup_second_remind": "10:30",
+    "standup_second_remind_enabled": true,
+    "standup_mark_missing": "11:00",
+    "standup_mark_missing_enabled": true,
     "standup_summary": "11:10",
+    "standup_summary_enabled": true,
     "overdue_scan": "10:00",
+    "overdue_scan_enabled": true,
     "daily_summary": "18:30",
+    "daily_summary_enabled": true,
     "dashboard": "18:40",
+    "dashboard_enabled": true,
     "task_reminder_frequency_hours": 24
   }
 }

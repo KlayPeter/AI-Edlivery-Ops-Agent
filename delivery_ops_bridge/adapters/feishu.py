@@ -4,8 +4,11 @@ import json
 import subprocess
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from ..config import FeishuConfig
 from ..models import Mention, SourceMessage, utc_now_iso
@@ -85,7 +88,12 @@ class FeishuEventParser:
                             if element.get("tag") in ("text", "a"):
                                 line_text += element.get("text", "")
                             elif element.get("tag") == "at":
-                                name = element.get("user_name") or element.get("name") or "User"
+                                user_id = element.get("user_id") or ""
+                                name = element.get("user_name") or element.get("name") or ""
+                                if user_id in self.known_names and (not name or name.startswith("_user_") or name == "User"):
+                                    name = self.known_names[user_id]
+                                elif not name:
+                                    name = "User"
                                 line_text += f"@{name} "
                     lines.append(line_text)
             if lines:
@@ -96,7 +104,11 @@ class FeishuEventParser:
     def _parse_mention(self, raw: Dict[str, Any]) -> Mention:
         mention_id = raw.get("id", {})
         open_id = raw.get("open_id") or mention_id.get("open_id") or raw.get("user_id", "")
-        name = raw.get("name") or raw.get("key") or self.known_names.get(open_id, open_id)
+        name = raw.get("name") or raw.get("key") or ""
+        if (not name or name.startswith("_user_")) and open_id in self.known_names:
+            name = self.known_names[open_id]
+        elif not name:
+            name = open_id
         return Mention(open_id=open_id, name=name)
 
 
@@ -298,6 +310,59 @@ class FeishuAdapter:
             pass
         return []
 
+    def fetch_chat_history(
+        self,
+        chat_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        page_size: int = 50,
+    ) -> List[SourceMessage]:
+        if self.dry_run or not chat_id:
+            return []
+
+        token = self._get_tenant_access_token()
+        parser = FeishuEventParser(bot_open_id=self.config.bot_open_id)
+        page_token: Optional[str] = None
+        messages: List[SourceMessage] = []
+        safe_page_size = max(1, min(int(page_size), 200))
+
+        while True:
+            query = {
+                "container_id_type": "chat",
+                "container_id": chat_id,
+                "start_time": str(int(start_time.timestamp() * 1000)),
+                "end_time": str(int(end_time.timestamp() * 1000)),
+                "sort_type": "ByCreateTimeAsc",
+                "page_size": str(safe_page_size),
+            }
+            if page_token:
+                query["page_token"] = page_token
+
+            req = Request(
+                "https://open.feishu.cn/open-apis/im/v1/messages?" + urlencode(query),
+                headers={"Authorization": f"Bearer {token}"},
+                method="GET",
+            )
+            with urlopen(req, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            if payload.get("code") != 0:
+                raise RuntimeError(f"Fetch history failed: {payload}")
+
+            data = payload.get("data", {})
+            for raw_item in data.get("items", []) or []:
+                message = self._history_item_to_source_message(raw_item, parser)
+                if message is not None:
+                    messages.append(message)
+
+            if not data.get("has_more"):
+                break
+            page_token = data.get("page_token") or data.get("next_page_token")
+            if not page_token:
+                break
+
+        return messages
+
     def _set_public_permission(self, file_token: str, share_link_entity: str) -> SendResult:
         if self.dry_run:
             return SendResult(ok=True, raw={"dry_run": True, "file_token": file_token, "share_link_entity": share_link_entity})
@@ -331,6 +396,46 @@ class FeishuAdapter:
         except Exception as exc:
             return SendResult(ok=False, raw={}, error=str(exc))
         return self._result_from_process(proc)
+
+    def _history_item_to_source_message(
+        self,
+        raw_item: Dict[str, Any],
+        parser: FeishuEventParser,
+    ) -> Optional[SourceMessage]:
+        body = raw_item.get("body", {}) if isinstance(raw_item.get("body"), dict) else {}
+        sender = raw_item.get("sender", {}) if isinstance(raw_item.get("sender"), dict) else {}
+        sender_id = sender.get("sender_id", {}) if isinstance(sender.get("sender_id"), dict) else {}
+        sender_ref = sender.get("id", {}) if isinstance(sender.get("id"), dict) else {}
+        sender_open_id = sender_id.get("open_id") or sender_ref.get("open_id") or sender.get("open_id", "")
+        message = {
+            "message_id": raw_item.get("message_id") or raw_item.get("message_id_v2"),
+            "chat_id": raw_item.get("chat_id") or raw_item.get("container_id") or "",
+            "chat_type": raw_item.get("chat_type") or ("group" if str(raw_item.get("chat_id", "")).startswith("oc_") else "private"),
+            "message_type": raw_item.get("message_type") or raw_item.get("msg_type") or body.get("message_type") or "text",
+            "content": body.get("content") or raw_item.get("content") or "",
+            "mentions": raw_item.get("mentions") or body.get("mentions") or [],
+            "create_time": raw_item.get("create_time") or raw_item.get("create_time_ms") or "",
+            "parent_id": raw_item.get("parent_id"),
+            "root_id": raw_item.get("root_id"),
+        }
+        payload = {
+            "event": {
+                "message": message,
+                "sender": {"sender_id": {"open_id": sender_open_id}},
+            }
+        }
+        source_message = parser.parse(payload)
+        if source_message is None:
+            return None
+        source_message.sender_name = (
+            sender.get("sender_name")
+            or sender.get("name")
+            or sender_id.get("name")
+            or sender_ref.get("name")
+            or source_message.sender_name
+        )
+        source_message.raw_payload = {"source": "history_sync", "item": raw_item}
+        return source_message
 
     def _run_with_retry(self, cmd: List[str], timeout: int, cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         attempts = max(1, int(getattr(self.config, "send_retry_count", 1)) + 1)

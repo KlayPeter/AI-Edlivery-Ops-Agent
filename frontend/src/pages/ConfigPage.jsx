@@ -5,8 +5,9 @@ import dayjs from 'dayjs';
 import { api } from '../api';
 
 const JOBS = [
-  { id: 'standup_push', name: '推送站会模板' },
-  { id: 'standup_remind', name: '站会未交提醒' },
+  { id: 'standup_push', name: '站会首次提醒' },
+  { id: 'standup_second_remind', name: '站会再次提醒' },
+  { id: 'standup_mark_missing', name: '记录未交站会' },
   { id: 'standup_summary', name: '生成站会汇总' },
   { id: 'overdue_scan', name: '超期任务扫描' },
   { id: 'daily_summary', name: '群聊日报归纳' },
@@ -52,6 +53,15 @@ const ConfigPage = () => {
       }
       if (config.schedule.task_reminder_frequency_hours === undefined) {
         config.schedule.task_reminder_frequency_hours = 24;
+      }
+      if (config.schedule.standup_second_remind === undefined && config.schedule.standup_remind !== undefined) {
+        config.schedule.standup_second_remind = config.schedule.standup_remind;
+      }
+      if (config.schedule.standup_second_remind_enabled === undefined && config.schedule.standup_remind_enabled !== undefined) {
+        config.schedule.standup_second_remind_enabled = config.schedule.standup_remind_enabled;
+      }
+      if (config.schedule.standup_mark_missing === undefined) {
+        config.schedule.standup_mark_missing = '11:00';
       }
       JOBS.forEach(job => {
         if (config.schedule[`${job.id}_enabled`] === undefined) {
@@ -273,7 +283,7 @@ const ConfigPage = () => {
 
             <Card title="定时任务设置 (Schedule Configuration)" style={{ marginBottom: 20 }}>
               <div style={{ color: '#888', marginBottom: 16 }}>
-                注：时间设定用于系统记录和底层参考。开关可随时关闭任务拦截底层触发。
+                注：后端服务常驻时会按这里的时间自动触发；开关可随时关闭对应任务。
               </div>
               {JOBS.map(job => (
                 <Row gutter={24} key={job.id} style={{ alignItems: 'center', marginBottom: 8 }}>

@@ -75,8 +75,10 @@ const LogsPage = () => {
         let summary = '';
         if (payload.text) summary = payload.text;
         else if (payload.text_preview) summary = payload.text_preview;
+        else if (payload.intent) summary = `意图: ${payload.intent} / 置信度: ${payload.confidence ?? '-'}`;
         else if (payload.job_name) summary = `任务: ${payload.job_name}`;
         else if (payload.reason) summary = `异常原因: ${payload.reason}`;
+        else if (payload.stage) summary = `阶段: ${payload.stage}`;
         else summary = JSON.stringify(payload);
         
         return <Text ellipsis style={{ width: '100%', maxWidth: '500px', display: 'inline-block' }}>{summary}</Text>;
@@ -105,6 +107,7 @@ const LogsPage = () => {
           onChange={(val) => setFilters({...filters, eventType: val})}
         >
           <Select.Option value="all">全部分类</Select.Option>
+          <Select.Option value="ai_*">全部 AI</Select.Option>
           {Object.entries(EVENT_TYPE_MAP).map(([key, val]) => (
             <Select.Option key={key} value={key}>{val.text}</Select.Option>
           ))}
