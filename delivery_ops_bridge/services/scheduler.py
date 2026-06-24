@@ -94,7 +94,6 @@ class InProcessScheduler:
             handler.store,
             handler.config.data_path,
             handler.config.project.name,
-            handler.config.feishu.group_name,
             handler.config.runtime.public_base_url,
         )
         jobs = ScheduledJobs(handler.config, handler.store, handler.feishu, dashboard, llm)

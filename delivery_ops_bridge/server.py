@@ -40,7 +40,6 @@ def build_handler(config_path: str | None = None, dry_run: bool = False) -> Mess
         store=store,
         data_dir=config.data_path,
         project_name=config.project.name,
-        group_name=config.feishu.group_name,
         public_base_url=config.runtime.public_base_url,
     )
     handler = MessageHandler(config, store, feishu, tapd, dashboard, intent_parser)
@@ -188,7 +187,7 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                 if saved_chat_type:
                     is_group = (saved_chat_type == "group")
                 else:
-                    is_group = (ctx.get("chat_id") == self.bridge.config.feishu.group_chat_id)
+                    is_group = (self.bridge.config.group_by_chat_id(ctx.get("chat_id")) is not None)
                     
                 ctx["is_group"] = is_group
 
@@ -208,8 +207,9 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                 
                 chat_id = ctx.get("chat_id")
                 if chat_id and not target_id:
-                    if chat_id == self.bridge.config.feishu.group_chat_id:
-                        ctx["chat_name"] = self.bridge.config.feishu.group_name
+                    group = self.bridge.config.group_by_chat_id(chat_id)
+                    if group:
+                        ctx["chat_name"] = group.name
                     else:
                         ctx["chat_name"] = "其他群聊"
                         

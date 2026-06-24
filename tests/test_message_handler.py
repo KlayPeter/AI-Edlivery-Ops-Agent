@@ -601,7 +601,10 @@ def test_blocked_task_saves_structured_info_and_enters_views_after_24h(handler):
 
     task["blocked_at"] = (datetime.utcnow() - timedelta(hours=25)).replace(microsecond=0).isoformat() + "Z"
     handler.store.save_task(Task(**task))
-    artifact = handler.dashboard.generate(date.today())
+    artifact = handler.dashboard.generate_for_group(handler.config.groups[0], date.today())
+    import json
+    stats = json.loads(handler.config.data_path.joinpath("dashboards", artifact.stats_path.split("/")[-1]).read_text(encoding="utf-8"))
+    assert len(stats["risks"]) == 1
     html = handler.config.data_path.joinpath("dashboards", artifact.html_path.split("/")[-1]).read_text(encoding="utf-8")
     summary = build_daily_summary(handler.store, "oc_group", date.today())
 
@@ -718,8 +721,8 @@ def test_daily_summary_backfills_group_history_before_rendering(handler):
 
     result = jobs.daily_summary(date(2026, 6, 18))
 
-    assert result["summary_id"] == "summary-2026-06-18"
-    assert history_calls
+    assert "summary-2026-06-18" in result["summary_ids"]
+    assert len(history_calls) == 1
     assert handler.store.get_source_message("om_history_summary_1") is not None
     assert handler.store.get_source_message("om_history_summary_2") is not None
     assert group_messages

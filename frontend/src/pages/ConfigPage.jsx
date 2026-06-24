@@ -326,51 +326,101 @@ const ConfigPage = () => {
         
         <Row gutter={24}>
           <Col span={24}>
-            <Card title="团队成员列表 (Team Members)" style={{ marginBottom: 20 }}>
-              <Form.List name="members">
-                {(fields, { add, remove }) => (
-                  <>
-                    {fields.map(({ key, name, ...restField }) => (
-                      <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
-                        <Form.Item
-                          {...restField}
-                          name={[name, 'name']}
-                          rules={[{ required: true, message: '请输入姓名' }]}
-                          style={{ width: 150 }}
-                        >
-                          <Input placeholder="姓名 (Name)" />
+            <Card title="群组配置 (Groups)" style={{ marginBottom: 20 }}>
+              <Form.List name="groups">
+                {(groupFields, { add: addGroup, remove: removeGroup }) => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {groupFields.map(({ key: groupKey, name: groupName, ...restGroupField }) => (
+                      <Card key={groupKey} size="small" title={`群组 ${groupName + 1}`} extra={<MinusCircleOutlined onClick={() => removeGroup(groupName)} style={{ color: '#ff4d4f' }} />}>
+                        <Row gutter={16}>
+                          <Col span={8}>
+                            <Form.Item
+                              {...restGroupField}
+                              name={[groupName, 'name']}
+                              label="群组名称"
+                              rules={[{ required: true, message: '请输入群组名称' }]}
+                            >
+                              <Input placeholder="输入名称 (例如: 前端组)" />
+                            </Form.Item>
+                          </Col>
+                          <Col span={16}>
+                            <Form.Item
+                              {...restGroupField}
+                              name={[groupName, 'chat_id']}
+                              label="绑定的飞书群聊"
+                              rules={[{ required: true, message: '请选择或输入群聊ID' }]}
+                            >
+                              <Select
+                                showSearch
+                                allowClear
+                                loading={groupsLoading}
+                                placeholder="请选择或输入群聊"
+                                optionFilterProp="children"
+                                filterOption={(input, option) =>
+                                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase()) ||
+                                  (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
+                                }
+                                options={(() => {
+                                  const opts = groups.map(g => ({ label: g.name, value: g.chat_id }));
+                                  return opts;
+                                })()}
+                              />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                        
+                        <Form.Item label="群成员列表" style={{ marginBottom: 0 }}>
+                          <Form.List name={[groupName, 'members']}>
+                            {(memberFields, { add: addMember, remove: removeMember }) => (
+                              <>
+                                {memberFields.map(({ key: memberKey, name: memberName, ...restMemberField }) => (
+                                  <Space key={memberKey} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                                    <Form.Item
+                                      {...restMemberField}
+                                      name={[memberName, 'name']}
+                                      rules={[{ required: true, message: '请输入姓名' }]}
+                                      style={{ width: 150 }}
+                                    >
+                                      <Input placeholder="姓名 (Name)" />
+                                    </Form.Item>
+                                    <Form.Item
+                                      {...restMemberField}
+                                      name={[memberName, 'open_id']}
+                                      rules={[{ required: true, message: '请输入飞书 Open ID' }]}
+                                      style={{ width: 300 }}
+                                    >
+                                      <Input placeholder="飞书 Open ID" />
+                                    </Form.Item>
+                                    <Form.Item
+                                      {...restMemberField}
+                                      name={[memberName, 'role']}
+                                      style={{ width: 150 }}
+                                    >
+                                      <Input placeholder="角色 (可选)" />
+                                    </Form.Item>
+                                    <Form.Item
+                                      {...restMemberField}
+                                      name={[memberName, 'is_active']}
+                                      valuePropName="checked"
+                                    >
+                                      <Switch checkedChildren="在职" unCheckedChildren="离职" />
+                                    </Form.Item>
+                                    <MinusCircleOutlined onClick={() => removeMember(memberName)} style={{ color: '#ff4d4f' }} />
+                                  </Space>
+                                ))}
+                                <Button type="dashed" onClick={() => addMember({ is_active: true })} block icon={<PlusOutlined />}>
+                                  添加成员
+                                </Button>
+                              </>
+                            )}
+                          </Form.List>
                         </Form.Item>
-                        <Form.Item
-                          {...restField}
-                          name={[name, 'open_id']}
-                          rules={[{ required: true, message: '请输入飞书 Open ID' }]}
-                          style={{ width: 300 }}
-                        >
-                          <Input placeholder="飞书 Open ID" />
-                        </Form.Item>
-                        <Form.Item
-                          {...restField}
-                          name={[name, 'role']}
-                          style={{ width: 150 }}
-                        >
-                          <Input placeholder="角色 (可选)" />
-                        </Form.Item>
-                        <Form.Item
-                          {...restField}
-                          name={[name, 'is_active']}
-                          valuePropName="checked"
-                        >
-                          <Switch checkedChildren="在职" unCheckedChildren="离职" />
-                        </Form.Item>
-                        <MinusCircleOutlined onClick={() => remove(name)} style={{ color: '#ff4d4f' }} />
-                      </Space>
+                      </Card>
                     ))}
-                    <Form.Item>
-                      <Button type="dashed" onClick={() => add({ is_active: true })} block icon={<PlusOutlined />}>
-                        添加团队成员
-                      </Button>
-                    </Form.Item>
-                  </>
+                    <Button type="dashed" onClick={() => addGroup({ members: [] })} block icon={<PlusOutlined />}>
+                      添加新群组
+                    </Button>
+                  </div>
                 )}
               </Form.List>
             </Card>

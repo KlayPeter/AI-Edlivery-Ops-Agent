@@ -39,11 +39,22 @@ class FeishuConfig:
     app_secret: str
     bot_open_id: str
     bot_name: str
-    group_chat_id: str
-    group_name: str
     lark_cli_path: str = "lark-cli"
     verify_token: str = ""
     send_retry_count: int = 1
+
+
+@dataclass
+class GroupConfig:
+    chat_id: str
+    name: str
+    members: List[Member] = field(default_factory=list)
+
+    def member_by_open_id(self, open_id: str) -> Member | None:
+        for member in self.members:
+            if member.open_id == open_id:
+                return member
+        return None
 
 
 @dataclass
@@ -83,7 +94,7 @@ class AppConfig:
     tapd: TapdConfig
     ai: AIConfig
     runtime: RuntimeConfig
-    members: List[Member] = field(default_factory=list)
+    groups: List[GroupConfig] = field(default_factory=list)
     schedule: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -98,9 +109,16 @@ class AppConfig:
         return path
 
     def member_by_open_id(self, open_id: str) -> Member | None:
-        for member in self.members:
-            if member.open_id == open_id:
-                return member
+        for group in self.groups:
+            for member in group.members:
+                if member.open_id == open_id:
+                    return member
+        return None
+
+    def group_by_chat_id(self, chat_id: str) -> GroupConfig | None:
+        for group in self.groups:
+            if group.chat_id == chat_id:
+                return group
         return None
 
 
@@ -139,8 +157,6 @@ def build_config(raw: Dict[str, Any], raw_path: Path | None = None) -> AppConfig
         app_secret=_env_override(feishu_raw.get("app_secret", ""), "FEISHU_APP_SECRET"),
         bot_open_id=feishu_raw.get("bot_open_id", ""),
         bot_name=feishu_raw.get("bot_name", "AI交付助理"),
-        group_chat_id=feishu_raw.get("group_chat_id", ""),
-        group_name=feishu_raw.get("group_name", "研发群"),
         lark_cli_path=feishu_raw.get("lark_cli_path", "lark-cli"),
         verify_token=feishu_raw.get("verify_token", ""),
         send_retry_count=max(0, int(feishu_raw.get("send_retry_count", 1))),
@@ -166,15 +182,35 @@ def build_config(raw: Dict[str, Any], raw_path: Path | None = None) -> AppConfig
     )
 
     runtime = RuntimeConfig(**raw.get("runtime", {}))
-    members = [Member(**member) for member in raw.get("members", [])]
     schedule = _normalize_schedule(raw.get("schedule", {}))
+
+    groups_raw = raw.get("groups", [])
+    groups = []
+    if groups_raw:
+        for group_raw in groups_raw:
+            groups.append(GroupConfig(
+                chat_id=group_raw.get("chat_id", ""),
+                name=group_raw.get("name", ""),
+                members=[Member(**m) for m in group_raw.get("members", [])]
+            ))
+    else:
+        old_group_id = feishu_raw.get("group_chat_id", "")
+        old_group_name = feishu_raw.get("group_name", "研发群")
+        old_members = [Member(**m) for m in raw.get("members", [])]
+        if old_group_id:
+            groups.append(GroupConfig(
+                chat_id=old_group_id,
+                name=old_group_name,
+                members=old_members
+            ))
+
     return AppConfig(
         project=project,
         feishu=feishu,
         tapd=tapd,
         ai=ai,
         runtime=runtime,
-        members=members,
+        groups=groups,
         schedule=schedule,
     )
 

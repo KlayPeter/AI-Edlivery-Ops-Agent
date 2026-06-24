@@ -92,8 +92,8 @@ class FeishuEventParser:
                                 name = element.get("user_name") or element.get("name") or ""
                                 if user_id in self.known_names and (not name or name.startswith("_user_") or name == "User"):
                                     name = self.known_names[user_id]
-                                elif not name:
-                                    name = "User"
+                                elif not name or name.startswith("_user_"):
+                                    name = "未知成员"
                                 line_text += f"@{name} "
                     lines.append(line_text)
             if lines:
@@ -107,8 +107,8 @@ class FeishuEventParser:
         name = raw.get("name") or raw.get("key") or ""
         if (not name or name.startswith("_user_")) and open_id in self.known_names:
             name = self.known_names[open_id]
-        elif not name:
-            name = open_id
+        elif not name or name.startswith("_user_"):
+            name = "未知成员"
         return Mention(open_id=open_id, name=name)
 
 

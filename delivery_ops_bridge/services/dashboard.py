@@ -26,27 +26,29 @@ PRIORITY_SORT = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
 
 class DashboardService:
-    def __init__(self, store: JsonStore, data_dir: Path, project_name: str, group_name: str, public_base_url: str = ""):
+    def __init__(self, store: JsonStore, data_dir: Path, project_name: str, public_base_url: str = ""):
         self.store = store
         self.data_dir = data_dir
         self.project_name = project_name
-        self.group_name = group_name
         self.public_base_url = public_base_url.rstrip("/")
 
-    def generate(self, day: date | None = None, highlights: List[str] | None = None) -> DashboardArtifact:
+    def generate_for_group(self, group, day: date | None = None, highlights: List[str] | None = None) -> DashboardArtifact:
         day = day or date.today()
         date_text = day.isoformat()
         all_tasks = self.store.list_tasks()
-        active_tasks = [t for t in all_tasks if t.get("status") != "cancelled" and not t.get("is_draft")]
+        active_tasks = [t for t in all_tasks if t.get("status") != "cancelled" and not t.get("is_draft") and t.get("source_group_id") == group.chat_id]
         tasks = self._sort_tasks(active_tasks)
-        standups = self.store.list_standups(date_text)
-        updates = self.store.list_task_updates()
+        
+        group_open_ids = {m.open_id for m in group.members}
+        standups = [s for s in self.store.list_standups(date_text) if s.get("open_id") in group_open_ids]
+        
+        updates = self.store.list_task_updates() # maybe filter updates by task.source_group_id too, but it doesn't matter much for dashboard stats unless updates are used directly
         stats = self._build_stats(tasks, standups, date_text)
         highlights = highlights or self._default_highlights(tasks, standups)
         dashboard_data = {
             "date": date_text,
             "project_name": self.project_name,
-            "group_name": self.group_name,
+            "group_name": group.name,
             "stats": stats,
             "highlights": highlights,
             "tasks": tasks,
@@ -57,13 +59,13 @@ class DashboardService:
             "risks": self._build_risks(tasks, standups),
             "standup_summary": self._build_standup_summary(standups),
         }
-        stats_path = self.data_dir / "dashboards" / f"stats-{date_text}.json"
+        stats_path = self.data_dir / "dashboards" / f"stats-{group.chat_id}-{date_text}.json"
         stats_path.write_text(json.dumps(dashboard_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        html_path = self.data_dir / "dashboards" / f"delivery-dashboard-{date_text}.html"
+        html_path = self.data_dir / "dashboards" / f"delivery-dashboard-{group.chat_id}-{date_text}.html"
         html_path.write_text(self._render_html(dashboard_data), encoding="utf-8")
         public_url = f"{self.public_base_url}/{html_path.name}" if self.public_base_url else None
         artifact = DashboardArtifact(
-            id=f"dashboard-{date_text}",
+            id=f"dashboard-{group.chat_id}-{date_text}",
             date=date_text,
             html_path=str(html_path),
             stats_path=str(stats_path),

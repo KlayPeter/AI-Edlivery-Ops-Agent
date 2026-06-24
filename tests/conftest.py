@@ -22,8 +22,6 @@ def config_path(tmp_path: Path) -> Path:
             "app_secret": "",
             "bot_open_id": "ou_bot",
             "bot_name": "AI交付助理",
-            "group_chat_id": "oc_group",
-            "group_name": "研发群",
             "lark_cli_path": "lark-cli",
             "verify_token": "",
         },
@@ -35,11 +33,15 @@ def config_path(tmp_path: Path) -> Path:
         },
         "ai": {"api_key": "", "api_base": "https://api.openai.com/v1", "model": "gpt-4o"},
         "runtime": {"data_dir": "data", "public_base_url": ""},
-        "members": [
-            {"open_id": "ou_creator", "name": "Figo", "role": "cto", "is_active": True},
-            {"open_id": "ou_zhangsan", "name": "张三", "role": "backend", "is_active": True},
-            {"open_id": "ou_lisi", "name": "李四", "role": "frontend", "is_active": True},
-        ],
+        "groups": [{
+            "chat_id": "oc_group",
+            "name": "研发群",
+            "members": [
+                {"open_id": "ou_creator", "name": "Figo", "role": "cto", "is_active": True},
+                {"open_id": "ou_zhangsan", "name": "张三", "role": "backend", "is_active": True},
+                {"open_id": "ou_lisi", "name": "李四", "role": "frontend", "is_active": True},
+            ]
+        }],
     }
     path = tmp_path / "config.json"
     path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
@@ -52,7 +54,7 @@ def handler(config_path: Path) -> MessageHandler:
     store = JsonStore(config.data_path)
     feishu = FeishuAdapter(config.feishu, dry_run=True)
     tapd = TapdAdapter(config.tapd, dry_run=True)
-    dashboard = DashboardService(store, config.data_path, config.project.name, config.feishu.group_name)
+    dashboard = DashboardService(store, config.data_path, config.project.name, config.runtime.public_base_url)
     return MessageHandler(config, store, feishu, tapd, dashboard)
 
 

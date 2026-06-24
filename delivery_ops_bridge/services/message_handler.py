@@ -60,9 +60,10 @@ class MessageHandler:
         self.tapd = tapd
         self.dashboard = dashboard
         self.intent_parser = intent_parser
+        all_members = [m for g in config.groups for m in g.members]
         self.parser = FeishuEventParser(
             bot_open_id=config.feishu.bot_open_id,
-            known_names={member.open_id: member.name for member in config.members},
+            known_names={member.open_id: member.name for member in all_members},
         )
 
     def handle_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -119,7 +120,10 @@ class MessageHandler:
             return daily_summary_result
 
         if "生成今日进度看板" in message.text or "生成看板" in message.text or "进度看板" in message.text:
-            artifact = self.dashboard.generate()
+            target_group = self.config.group_by_chat_id(message.chat_id)
+            if not target_group:
+                return {"handled": True, "reason": "unknown_group_for_dashboard"}
+            artifact = self.dashboard.generate_for_group(target_group)
             publish = self.feishu.publish_file(artifact.html_path)
             if publish.url:
                 artifact.public_url = publish.url
@@ -189,7 +193,7 @@ class MessageHandler:
         elif message.sender_open_id:
             self.feishu.send_group_text(
                 f"无法识别私聊用户：{message.sender_open_id}。请管理员在配置 members 中绑定该用户后再处理。",
-                self.config.feishu.group_chat_id,
+                self.config.groups[0].chat_id if self.config.groups else "",
             )
             self.feishu.send_private_text(message.sender_open_id, "暂未识别你的身份，请联系管理员完成成员绑定。")
             self.store.append_audit_log("unknown_user", {"open_id": message.sender_open_id, "chat_id": message.chat_id})
@@ -262,9 +266,15 @@ class MessageHandler:
         target_day = self._parse_summary_day(text, message)
         jobs = ScheduledJobs(self.config, self.store, self.feishu, self.dashboard)
         period = self.config.runtime.daily_summary_period
-        jobs._backfill_group_messages_for_summary(target_day, period)
+        
+        target_group = self.config.group_by_chat_id(message.chat_id)
+        if not target_group:
+            self._reply(message, "private", "晚报生成只能在群聊中触发，或者我无法识别您所在的群聊。")
+            return {"handled": True, "action": "daily_summary_failed"}
+
+        jobs._backfill_group_messages_for_summary(target_group.chat_id, target_day, period)
         llm = getattr(self.intent_parser, "llm", None) if self.intent_parser else None
-        summary = build_daily_summary(self.store, self.config.feishu.group_chat_id, target_day, llm, period)
+        summary = build_daily_summary(self.store, target_group.chat_id, target_day, llm, period)
         self.store.save_daily_summary(summary)
         rendered = render_daily_summary(summary)
         self.feishu.send_reply_text(message.id, rendered)
@@ -274,6 +284,7 @@ class MessageHandler:
                 "date": target_day.isoformat(),
                 "trigger": "group_command",
                 "source_message_id": message.id,
+                "group_id": target_group.chat_id,
             },
         )
         return {"handled": True, "action": "daily_summary", "summary_id": summary.id, "date": target_day.isoformat()}
@@ -698,7 +709,7 @@ class MessageHandler:
                 self._notify_source_group(task, f"负责人 {message.sender_name} 已接受任务：{task.title}{tapd_error_msg}")
         elif update_type == "owner_marked_done":
             text = f"{task.primary_owner_name} 已标记任务完成，等待创建人验收：{task.title}{tapd_error_msg}\n可直接引用本消息回复：验收通过 / 打回"
-            target_chat_id = message.chat_id if source == "group" else self.config.feishu.group_chat_id
+            target_chat_id = message.chat_id if source == "group" else task.source_group_id
             if source == "group":
                 result = self.feishu.send_reply_text(message.id, text)
             else:
@@ -747,7 +758,8 @@ class MessageHandler:
             return None
 
         contextual_task = self._task_from_reply_context(reply_context)
-        intent = self.intent_parser.parse(message, reply_context, contextual_task, self.config.members)
+        all_members = [m for g in self.config.groups for m in g.members]
+        intent = self.intent_parser.parse(message, reply_context, contextual_task, all_members)
         if not intent.available:
             self.store.append_audit_log("ai_intent_failed", {"message_id": message.id, "error": intent.error})
             return None
