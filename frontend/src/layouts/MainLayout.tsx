@@ -1,11 +1,11 @@
 import React from 'react';
 import { Layout, Menu } from 'antd';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { DashboardOutlined, UnorderedListOutlined, CheckSquareOutlined, CodeOutlined, DatabaseOutlined, SettingOutlined } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
 
-export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const MainLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -59,7 +59,7 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
       </Header>
       <Content style={{ background: '#f5f5f5', padding: '24px', display: 'flex', flexDirection: 'column', flex: 1 }}>
         <div style={{ background: '#fff', flex: 1, borderRadius: '8px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          {children}
+          <Outlet />
         </div>
       </Content>
     </Layout>
