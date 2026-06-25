@@ -2,7 +2,7 @@ import { test, expect, describe } from "bun:test";
 import { JsonStore } from "../src/core/storage";
 import * as path from "path";
 import * as fs from "fs";
-import { SourceMessage } from "../src/models/types";
+import type { SourceMessage } from "../src/models/types";
 
 describe("JsonStore", () => {
     const testDir = path.join(process.cwd(), "test_data");

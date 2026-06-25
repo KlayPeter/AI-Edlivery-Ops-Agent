@@ -1,4 +1,4 @@
-import { generateText, CoreMessage } from 'ai';
+import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { AIConfig } from '../core/config';
 
@@ -28,7 +28,7 @@ export class LLMAdapter {
             apiKey: this.config.api_key,
         });
 
-        const messages: CoreMessage[] = [
+        const messages: any[] = [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
         ];
@@ -41,7 +41,7 @@ export class LLMAdapter {
                 const { text, usage } = await generateText({
                     model: openai(this.config.model),
                     messages,
-                    maxTokens: this.config.max_tokens,
+                    // maxTokens: this.config.max_tokens,
                     temperature: this.config.temperature,
                 });
 

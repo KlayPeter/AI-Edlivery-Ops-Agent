@@ -115,7 +115,7 @@ export class FeishuEventParser {
 
 export class FeishuAdapter {
     private config: FeishuConfig;
-    private dryRun: boolean;
+    public dryRun: boolean;
     public lastReactionError: string | null = null;
     private auditCallback?: (eventType: string, payload: any) => void;
     private tokenCache: string | null = null;
@@ -382,5 +382,38 @@ export class FeishuAdapter {
             return lines[lines.length - 1];
         }
         return "未知错误";
+    }
+
+    parseEvent(payload: any): SourceMessage | null {
+        const parser = new FeishuEventParser(this.config.bot_open_id || "");
+        return parser.parse(payload);
+    }
+
+    async listGroups(): Promise<any[]> {
+        if (this.dryRun) return [];
+        try {
+            const token = await this._getTenantAccessToken();
+            const url = `https://open.feishu.cn/open-apis/im/v1/chats?page_size=100`;
+            const resp = await axios.get(url, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            return resp.data?.data?.items || [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    async listGroupMembers(chatId: string): Promise<any[]> {
+        if (this.dryRun || !chatId) return [];
+        try {
+            const token = await this._getTenantAccessToken();
+            const url = `https://open.feishu.cn/open-apis/im/v1/chats/${chatId}/members?page_size=100`;
+            const resp = await axios.get(url, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            return resp.data?.data?.items || [];
+        } catch (e) {
+            return [];
+        }
     }
 }
