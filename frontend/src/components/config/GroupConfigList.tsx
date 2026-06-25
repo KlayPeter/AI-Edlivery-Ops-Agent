@@ -35,7 +35,7 @@ export const GroupConfigList = ({ form, groups, groupsLoading, originalConfig, g
               </Button>
             </div>
             {groupFields.map(({ key: groupKey, name: groupName, ...restGroupField }) => (
-              <Card key={groupKey} size="small" title={`群组 ${groupName + 1}`} extra={<MinusCircleOutlined onClick={() => removeGroup(groupName)} style={{ color: '#ff4d4f' }} />}>
+              <Card key={groupKey} size="small" title={`群组 ${groupName + 1}`} extra={<Button type="link" danger onClick={() => removeGroup(groupName)}>删除群组</Button>}>
                 <Row gutter={16}>
                   <Col span={24}>
                     <Form.Item
@@ -182,7 +182,7 @@ export const GroupConfigList = ({ form, groups, groupsLoading, originalConfig, g
                             >
                               <Switch checkedChildren="在职" unCheckedChildren="离职" />
                             </Form.Item>
-                            <MinusCircleOutlined onClick={() => removeMember(memberName)} style={{ color: '#ff4d4f' }} />
+                            <Button type="link" danger onClick={() => removeMember(memberName)}>删除</Button>
                           </Space>
                         ))}
                         <Button type="dashed" onClick={() => addMember({ is_active: true })} block icon={<PlusOutlined />}>

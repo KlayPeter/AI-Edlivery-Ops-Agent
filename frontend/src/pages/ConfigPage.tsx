@@ -185,26 +185,41 @@ const ConfigPage = () => {
   }
 
   return (
-    <div style={{ padding: '24px', height: '100%', overflow: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+    <div style={{ padding: "24px", height: "100%", overflow: "auto" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 24,
+        }}
+      >
         <h2 style={{ margin: 0 }}>系统配置</h2>
-        <Button type="primary" onClick={() => form.submit()} loading={saving} size="large" disabled={!originalConfig}>
+        <Button
+          type="primary"
+          onClick={() => form.submit()}
+          loading={saving}
+          size="large"
+          disabled={!originalConfig}
+        >
           保存配置
         </Button>
       </div>
 
-      {loadError && <Alert message="配置加载失败" description={loadError} type="error" showIcon style={{ marginBottom: 16 }} />}
+      {loadError && (
+        <Alert
+          message="配置加载失败"
+          description={loadError}
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       <Form form={form} layout="vertical" onFinish={onFinish}>
         <Row gutter={24}>
           <Col span={12}>
             <FeishuConfig />
-            <TapdConfig />
-            <AiModelConfig />
-          </Col>
-
-          <Col span={12}>
-            <RuntimeConfig />
             <GroupConfigList
               form={form}
               groups={groups}
@@ -216,14 +231,20 @@ const ConfigPage = () => {
                 try {
                   const data = await api.fetchGroups();
                   setGroups(data);
-                  message.success('已刷新飞书群聊列表');
-                } catch(e: any) {
-                  message.error('刷新群聊列表失败: ' + e.message);
+                  message.success("已刷新飞书群聊列表");
+                } catch (e: any) {
+                  message.error("刷新群聊列表失败: " + e.message);
                 } finally {
                   setGroupsLoading(false);
                 }
               }}
             />
+          </Col>
+
+          <Col span={12}>
+            <TapdConfig />
+            <RuntimeConfig />
+            <AiModelConfig />
           </Col>
         </Row>
       </Form>
