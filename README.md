@@ -1,176 +1,147 @@
-# Delivery Ops Bridge
+<div align="center">
+  <h1>🚀 Delivery Ops Bridge</h1>
+  <p>
+    <strong>A high-performance, event-driven AI Delivery & Operations Middle-End</strong>
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white" alt="Bun" />
+    <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+    <img src="https://img.shields.io/badge/Elysia-000000?style=for-the-badge" alt="Elysia" />
+    <img src="https://img.shields.io/badge/Feishu-00B2FF?style=for-the-badge&logo=feishu&logoColor=white" alt="Feishu" />
+    <img src="https://img.shields.io/badge/TAPD-FF6A00?style=for-the-badge&logo=tencent&logoColor=white" alt="TAPD" />
+  </p>
+</div>
 
-Delivery Ops Bridge 是一个事件驱动的研发交付中台，用来连接飞书、TAPD 和兼容 OpenAI Chat Completions 的模型网关。
+<br />
 
-当前仓库已经实现基于 TypeScript / Bun (Elysia) 的重构：
+**Delivery Ops Bridge** 是一个专为敏捷研发团队打造的智能化交付中台。它无缝打通了 **飞书 (Feishu)**、**TAPD** 与 **AI 模型网关 (OpenAI / DeepSeek)**，通过自动化的工作流和 AI 能力，显著降低项目管理的沟通成本，提升研发交付效率。
 
-- 飞书 Webhook 接入，支持 `url_verification` 和 `im.message.receive_v1`
-- 本地 JSON 存储：消息、任务、更新、站会、日报、看板、审计日志
-- 显式任务创建：必须满足 `@机器人 + @员工 + 创建任务语义`
-- TAPD Story 创建和状态更新
-- 任务确认、阻塞、完成、验收等轻量追踪
-- 站会收集、日报、HTML 看板、系统内置定时任务调度
-- 看板发布到飞书云盘（开通 Drive 相关 scope 后自动上传并回群链接）
+---
 
-## 当前状态
+## ✨ 核心特性
 
-项目后台现已全面迁移至 **Node.js / Bun** 生态，使用 TypeScript 编写。
+- **🤖 智能化任务解析**：无需打开 TAPD，只需在群聊中 `@机器人 + @责任人 + 任务描述`，AI 将自动拆解任务、识别优先级并创建记录。
+- **🔄 全自动工作流闭环**：支持任务的确认接受、阻塞记录、进度更新、完成以及验收。
+- **📊 多维度统计生成**：
+  - **每日站会收集**：自动私聊提醒成员提交站会，到点自动汇总并发送至群聊。
+  - **研发日报**：结合群聊上下文和 AI 总结能力，自动生成研发日报。
+  - **可视化看板**：自动生成精美的 HTML 交付看板，并发布到飞书云盘供全量团队查阅。
+- **⚡️ 极致性能**：全面拥抱 **TypeScript + Bun** 和 **Elysia** 框架，实现毫秒级 Webhook 响应与超低内存占用。
+- **🔌 灵活的扩展层**：模块化的 Adapter 设计，轻松支持对接其他企业级办公系统。
 
-- 默认端口: `8090`
-- 核心框架: `Elysia`
+## 🏗 技术栈
 
-## 配置文件
+| 类别 | 技术方案 | 描述 |
+| --- | --- | --- |
+| **运行时** | `Bun` | 提供极速的启动体验、原生的 TS 支持及卓越的并发性能 |
+| **框架** | `Elysia` | 最快的 Bun Web 框架，提供强类型的开发体验 |
+| **AI SDK** | `@ai-sdk/openai` | 标准化的 LLM 接入层，支持 OpenAI、DeepSeek 等模型 |
+| **数据层** | `JsonStore` | 轻量级本地数据引擎，免去重数据库依赖的部署烦恼 |
 
-当前实际运行配置文件是：
+## 🚀 快速开始
 
-[config/config.json](config/config.json)
+### 1. 环境准备
 
-示例模板在：
+确保你已在系统中安装了 [Bun](https://bun.sh/) 运行时引擎。
 
-[config/config.example.json](config/config.example.json)
-
-已经配置好的关键项：
-
-- 飞书 `app_id` / `app_secret`
-- TAPD `workspace_id` / `api_token` / `workitem_type_id`
-- DeepSeek `api_base` / `api_key` / `model`
-
-还需要你后续按真实情况补全或确认：
-
-- `feishu.bot_open_id`
-- `feishu.group_chat_id`
-- `members` 里的团队成员 `open_id` 和姓名
-
-## 安装与检查
-
-进入 `backend` 目录，安装依赖：
+### 2. 克隆与安装依赖
 
 ```bash
-cd backend
+git clone https://github.com/your-org/delivery-ops-bridge.git
+cd delivery-ops-bridge/backend
+
+# 使用 Bun 极速安装依赖
 bun install
 ```
 
-检查 TypeScript 类型是否正确：
+### 3. 配置环境变量
+
+从示例文件创建你的配置：
 
 ```bash
-bun run typecheck
+cp config/config.example.json config/config.json
 ```
 
-## 启动本地 Webhook 服务
+你需要填写的关键配置包括：
+- **Feishu**: `app_id`, `app_secret`, `bot_open_id`
+- **TAPD**: `workspace_id`, `api_token`
+- **AI / DeepSeek**: `api_base`, `api_key`
 
-日常开发联调（支持热更新）：
+### 4. 启动服务
+
+**日常开发（开启热更新，推荐）：**
 
 ```bash
-cd backend
 bun dev
 ```
 
-正式环境运行：
+**生产环境启动：**
 
 ```bash
-cd backend
 bun start
 ```
 
-看到类似输出说明服务起来了：
-
-```text
+启动成功后，你将看到如下标志性输出：
+```
 🦊 Elysia is running at localhost:8090
 Loaded config for project: ZenithStrat
 ```
 
-健康检查：
+---
+
+## 🌐 暴露公网回调 (Webhook)
+
+要在飞书开放平台接收事件推送，必须将本地的 `8090` 端口暴露至公网。推荐使用 **localtunnel**：
 
 ```bash
-curl http://127.0.0.1:8090/healthz
-```
-
-应该返回：
-
-```json
-{"ok": true}
-```
-
-## 暴露公网地址给飞书
-
-如果开发机在内网，你可以使用 `localtunnel` 暴露公网地址供飞书回调。
-
-> [!TIP]
-> 推荐使用 `localtunnel` 进行穿透，它可以固定子域名且不易被拦截。
-
-```bash
+# 替换你的专属子域名
 npx localtunnel --port 8090 --subdomain peter-ops-bot-666
 ```
+将获取到的 HTTPS 地址填写至 **飞书开放平台 -> 事件订阅 -> 请求网址**。
 
-它会输出类似：
+*(如遇网络受限，也可考虑使用 `cloudflared tunnel` 或 `localhost.run` 替代。)*
+
+---
+
+## 🕒 自动化调度器 (Cron Jobs)
+
+系统内部集成了毫秒级的守护任务调度器。只需保证 `bun start` 在后台常驻，系统便会按照 `config.json` 中的 `schedule` 时间表自动执行以下任务：
+
+- `standup-push`: 定点分发站会模板
+- `standup-summary`: 聚合站会并推送到群
+- `overdue-scan`: 识别延期风险任务并预警
+- `dashboard`: 渲染每日迭代进度数据看板
+
+---
+
+## 🔐 飞书开放平台权限说明
+
+为确保所有功能正常运作，请为应用开启以下必备权限：
+
+- **基础通信**：`im:message.receive_v1` (接收消息)
+- **文档与云盘（用于自动发布看版）**：
+  - `drive:drive`
+  - `drive:file`
+  - `drive:file:upload`
+  - `docs:permission.setting:write_only`
+
+---
+
+## 📂 核心目录结构
 
 ```text
-your url is: https://peter-ops-bot-666.loca.lt
+├── backend/                  # Bun & TypeScript 后端核心逻辑
+│   ├── src/
+│   │   ├── adapters/         # 外部 API 适配器 (Feishu, TAPD, LLM)
+│   │   ├── core/             # 核心引擎 (Scheduler, Store)
+│   │   ├── services/         # 业务编排 (MessageHandler, Standup, Jobs)
+│   │   └── index.ts          # Elysia 路由与系统启动入口
+│   ├── package.json          # 依赖与脚本
+├── config/                   # 配置文件目录
+├── data/                     # (Git Ignore) 运行时产生的数据和产物
+└── README.md                 # 项目文档
 ```
 
-把这个地址填到飞书开放平台：
-
-```text
-飞书开放平台 -> 你的应用 -> 事件订阅 -> 请求网址
-```
-
-请求网址就填：
-
-```text
-https://peter-ops-bot-666.loca.lt
-```
-
-飞书验证 URL 时，本服务会自动响应 `challenge`。
-
-备选方案（Cloudflared 或 localhost.run）：
-```bash
-cloudflared tunnel --url http://localhost:8090
-```
-```bash
-ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R 80:localhost:8090 nokey@localhost.run
-```
-
-## 自动任务调度
-
-（每日群聊总结）和（站会收集 / 提醒 / 汇总）已经接入服务内调度器。只要 `backend` 服务常驻，系统会按 `config/config.json` 里的 `schedule` 自动触发日报、站会、看板和超期扫描。
-
-### 先决条件
-
-**Webhook 服务需要常驻**：确保 `bun start` 在后台持续运行。
-
-### 这组定时任务分别做什么
-
-- `standup-push`：私聊每位成员发站会模板
-- `standup-second-remind`：私聊催未提交成员
-- `standup-mark-missing`：记录未提交名单
-- `standup-summary`：汇总站会并发群
-- `daily-summary`：发群聊日报
-- `dashboard`：生成并发布看板
-- `overdue-scan`：扫超期任务并私聊负责人
-
-## 飞书后台还需要开哪些权限
-
-消息收发和事件订阅之外，如果你希望“看板自动上传到飞书云盘，并把可访问链接发回群里”，还需要在飞书开放平台给应用开这些 scope：
-
-- `drive:drive`
-- `drive:file`
-- `drive:file:upload`
-- `docs:permission.setting:write_only`
-
-如果 scope 没开，任务不会中断，但群里会收到一条“看板已生成，云盘共享未配置完成”的提示。
-
-如果你后面要把看板做成**可在线编辑的飞书文档**，再补：
-
-- `docs:doc`
-
-## 目录说明
-
-默认运行时数据目录是 `data/`：
-
-- `data/messages/`：原始飞书消息
-- `data/tasks/`：任务数据
-- `data/updates/`：任务状态与进度日志
-- `data/standups/{date}/`：每日站会
-- `data/summaries/`：日报结构化结果
-- `data/dashboards/`：HTML 看板与统计 JSON
-- `data/logs/audit.jsonl`：审计日志
+<div align="center">
+  <sub>Built with ❤️ by the Delivery Ops Team.</sub>
+</div>
