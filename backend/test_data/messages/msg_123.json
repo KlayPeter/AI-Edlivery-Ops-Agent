@@ -1,0 +1,11 @@
+{
+  "id": "msg_123",
+  "chat_id": "chat_456",
+  "chat_type": "group",
+  "sender_open_id": "ou_789",
+  "sender_name": "Test User",
+  "text": "Hello World",
+  "message_type": "text",
+  "sent_at": "2026-06-25T06:37:16.929Z",
+  "raw_payload": {}
+}

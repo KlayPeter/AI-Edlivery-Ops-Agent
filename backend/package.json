@@ -1,0 +1,22 @@
+{
+  "name": "backend",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.74",
+    "@elysiajs/cors": "^1.4.2",
+    "@elysiajs/swagger": "^1.3.1",
+    "ai": "^6.0.209",
+    "axios": "^1.18.1",
+    "dayjs": "^1.11.21",
+    "elysia": "^1.4.29",
+    "zod": "^4.4.3"
+  }
+}
