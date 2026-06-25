@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Typography, Tag, Alert, Table, DatePicker, Select, Space, Button } from 'antd';
-import { api } from '../api';
+import { api } from '@/api';
 import dayjs from 'dayjs';
-import { getEventMapping, EVENT_TYPE_MAP } from '../constants';
+import { getEventMapping, EVENT_TYPE_MAP } from '@/constants';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;

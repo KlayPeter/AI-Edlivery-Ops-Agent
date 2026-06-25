@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Typography, Card, Button, Row, Col, message, Select, Space } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
-import { api } from '../api';
+import { api } from '@/api';
 
 const { Title } = Typography;
 

@@ -24,7 +24,7 @@ export const EVENT_TYPE_MAP: Record<string, { text: string; color: string }> = {
   handler_error: { text: '系统异常', color: 'red' },
   tapd_create_failed: { text: 'TAPD创建失败', color: 'red' },
   tapd_update_failed: { text: 'TAPD更新失败', color: 'red' },
-  unknown_user: { text: '未知用户', color: 'volcano' },
+  any_user: { text: '未知用户', color: 'volcano' },
 };
 
 export const getEventMapping = (eventType: string) => {

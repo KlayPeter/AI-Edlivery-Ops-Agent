@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Tag, Typography, message, Tooltip, Space, Alert, DatePicker, Select, Button, Tabs } from 'antd';
-import { api } from '../api';
+import { api } from '@/api';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;

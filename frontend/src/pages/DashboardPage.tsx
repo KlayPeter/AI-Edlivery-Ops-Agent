@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Layout, Menu, Spin, Alert, Empty, Drawer, Select, Space, DatePicker } from 'antd';
 import dayjs from 'dayjs';
-import { api } from '../api';
+import { api } from '@/api';
 
 const { Content } = Layout;
 

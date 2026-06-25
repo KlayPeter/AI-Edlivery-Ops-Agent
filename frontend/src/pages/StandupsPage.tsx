@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Typography, Card, Table, Tag, DatePicker, Row, Col, Button, Modal, Spin, message, Select, Space } from 'antd';
 import { EyeOutlined, CheckCircleOutlined, ClockCircleOutlined, StopOutlined, WarningOutlined, QuestionCircleOutlined, CloseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { api } from '../api';
+import { api } from '@/api';
 
 const { Title, Text } = Typography;
 
