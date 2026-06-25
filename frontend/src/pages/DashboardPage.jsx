@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Layout, Menu, Spin, Alert, Empty, Drawer } from 'antd';
+import { Layout, Menu, Spin, Alert, Empty, Drawer, Select, Space, DatePicker } from 'antd';
+import dayjs from 'dayjs';
 import { api } from '../api';
 
 const { Content } = Layout;
 
 const DashboardPage = () => {
   const [dashboards, setDashboards] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState(dayjs().format('YYYY-MM'));
   const [selectedDashboard, setSelectedDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -16,12 +20,19 @@ const DashboardPage = () => {
     let cancelled = false;
     const fetchData = async () => {
       try {
-        const dashboardsData = await api.fetchDashboards();
+        const [dashboardsData, configData] = await Promise.all([
+          api.fetchDashboards(),
+          api.fetchConfig().catch(() => ({ groups: [] }))
+        ]);
         if (cancelled) return;
         setDashboards(dashboardsData);
+        setGroups(configData.groups || []);
+        
+        // Auto-select first dashboard available
         if (dashboardsData.length > 0) {
           setSelectedDashboard(dashboardsData[0]);
         }
+
       } catch (e) {
         if (!cancelled) {
           setError(e.message || '加载看板失败');
@@ -55,6 +66,32 @@ const DashboardPage = () => {
         width={280}
         styles={{ body: { padding: 0 } }}
       >
+        <div style={{ padding: '16px', borderBottom: '1px solid #f0f0f0' }}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 4, color: '#888', fontSize: 12 }}>所属群组</div>
+            <Select 
+              value={selectedGroup} 
+              onChange={setSelectedGroup} 
+              style={{ width: '100%' }}
+              placeholder="请选择群聊"
+              options={[
+                { label: '全部', value: 'all' },
+                ...groups.map(g => ({ label: g.name || g.chat_id, value: g.chat_id }))
+              ]}
+            />
+          </div>
+          <div>
+            <div style={{ marginBottom: 4, color: '#888', fontSize: 12 }}>所属月份</div>
+            <DatePicker 
+              picker="month" 
+              value={selectedMonth ? dayjs(selectedMonth, 'YYYY-MM') : null}
+              onChange={(d) => setSelectedMonth(d ? d.format('YYYY-MM') : '')}
+              style={{ width: '100%' }}
+              placeholder="选择月份"
+              allowClear={true}
+            />
+          </div>
+        </div>
         <Menu
           mode="inline"
           selectedKeys={[selectedDashboard]}
@@ -62,10 +99,26 @@ const DashboardPage = () => {
             setSelectedDashboard(e.key);
             setDrawerVisible(false);
           }}
-          items={dashboards.map(d => ({ key: d, label: d }))}
+          items={dashboards
+            .filter(d => {
+              const groupMatch = selectedGroup === 'all' || d.includes(selectedGroup);
+              const dateMatch = d.match(/(\d{4}-\d{2}-\d{2})\.html$/);
+              const monthMatch = selectedMonth ? (dateMatch && dateMatch[1].startsWith(selectedMonth)) : true;
+              return groupMatch && monthMatch;
+            })
+            .map(d => {
+              const match = d.match(/(\d{4}-\d{2}-\d{2})\.html$/);
+              const label = match ? match[1] : d;
+              return { key: d, label: label };
+            })}
           style={{ borderRight: 0 }}
         />
-        {dashboards.length === 0 && <Empty description="暂无看板数据" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginTop: 40 }} />}
+        {dashboards.filter(d => {
+              const groupMatch = selectedGroup === 'all' || d.includes(selectedGroup);
+              const dateMatch = d.match(/(\d{4}-\d{2}-\d{2})\.html$/);
+              const monthMatch = selectedMonth ? (dateMatch && dateMatch[1].startsWith(selectedMonth)) : true;
+              return groupMatch && monthMatch;
+            }).length === 0 && <Empty description="暂无看板数据" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginTop: 40 }} />}
       </Drawer>
       
       <Content style={{ padding: '24px', overflow: 'auto', height: '100%', display: 'flex', flexDirection: 'column' }}>

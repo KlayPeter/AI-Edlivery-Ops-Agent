@@ -51,26 +51,52 @@ const ConfigPage = () => {
         config.runtime.daily_summary_period_start = dayjs('00:00', 'HH:mm');
         config.runtime.daily_summary_period_end = dayjs('23:59', 'HH:mm');
       }
-      if (config.schedule.task_reminder_frequency_hours === undefined) {
-        config.schedule.task_reminder_frequency_hours = 24;
+      if (config.groups && Array.isArray(config.groups)) {
+        config.groups = config.groups.map(group => {
+          const gSchedule = { ...(group.schedule || {}) };
+          const fallback = config.schedule || {};
+          
+          JOBS.forEach(job => {
+            if (gSchedule[`${job.id}_enabled`] === undefined) {
+              gSchedule[`${job.id}_enabled`] = fallback[`${job.id}_enabled`] !== undefined ? fallback[`${job.id}_enabled`] : true;
+            }
+            let timeVal = gSchedule[job.id] || fallback[job.id];
+            
+            // specific defaults
+            if (!timeVal) {
+              if (job.id === 'standup_second_remind') timeVal = gSchedule.standup_remind || fallback.standup_remind || '09:30';
+              if (job.id === 'standup_mark_missing') timeVal = '11:00';
+            }
+            
+            if (timeVal && typeof timeVal === 'string') {
+              gSchedule[job.id] = dayjs(timeVal, 'HH:mm');
+            } else if (dayjs.isDayjs(timeVal)) {
+              gSchedule[job.id] = timeVal;
+            } else {
+              gSchedule[job.id] = null;
+            }
+          });
+          
+          let dsPeriodStart = dayjs('00:00', 'HH:mm');
+          let dsPeriodEnd = dayjs('23:59', 'HH:mm');
+          if (group.daily_summary_period) {
+            const [start, end] = group.daily_summary_period.split('-');
+            dsPeriodStart = dayjs(start, 'HH:mm');
+            dsPeriodEnd = dayjs(end, 'HH:mm');
+          } else if (config.runtime.daily_summary_period) {
+            const [start, end] = config.runtime.daily_summary_period.split('-');
+            dsPeriodStart = dayjs(start, 'HH:mm');
+            dsPeriodEnd = dayjs(end, 'HH:mm');
+          }
+          
+          return { 
+            ...group, 
+            schedule: gSchedule,
+            daily_summary_period_start: dsPeriodStart,
+            daily_summary_period_end: dsPeriodEnd
+          };
+        });
       }
-      if (config.schedule.standup_second_remind === undefined && config.schedule.standup_remind !== undefined) {
-        config.schedule.standup_second_remind = config.schedule.standup_remind;
-      }
-      if (config.schedule.standup_second_remind_enabled === undefined && config.schedule.standup_remind_enabled !== undefined) {
-        config.schedule.standup_second_remind_enabled = config.schedule.standup_remind_enabled;
-      }
-      if (config.schedule.standup_mark_missing === undefined) {
-        config.schedule.standup_mark_missing = '11:00';
-      }
-      JOBS.forEach(job => {
-        if (config.schedule[`${job.id}_enabled`] === undefined) {
-          config.schedule[`${job.id}_enabled`] = true;
-        }
-        if (config.schedule[job.id]) {
-          config.schedule[job.id] = dayjs(config.schedule[job.id], 'HH:mm');
-        }
-      });
 
       setOriginalConfig(config);
       form.setFieldsValue(config);
@@ -86,6 +112,48 @@ const ConfigPage = () => {
     };
   }, [form]);
 
+  
+  const handleTriggerJob = async () => {
+    if (!debugJob || !debugGroup) {
+      message.warning('请选择群聊和要调试的任务');
+      return;
+    }
+    setDebugLoading(true);
+    try {
+      const res = await api.triggerJob(debugJob, debugGroup, false);
+      const data = await res.json();
+      if (res.ok) {
+        message.success(data.message || '触发成功');
+      } else {
+        message.error(data.error || '触发失败');
+      }
+    } catch (e) {
+      message.error(e.message);
+    } finally {
+      setDebugLoading(false);
+    }
+  };
+
+  const getDefaultGroupData = () => {
+    const fallback = originalConfig?.schedule || {};
+    const s = {};
+    JOBS.forEach(job => {
+      s[`${job.id}_enabled`] = fallback[`${job.id}_enabled`] !== undefined ? fallback[`${job.id}_enabled`] : true;
+      let timeVal = fallback[job.id];
+      if (!timeVal) {
+        if (job.id === 'standup_second_remind') timeVal = fallback.standup_remind || '09:30';
+        if (job.id === 'standup_mark_missing') timeVal = '11:00';
+      }
+      s[job.id] = timeVal ? dayjs(timeVal, 'HH:mm') : null;
+    });
+    return {
+      members: [],
+      schedule: s,
+      daily_summary_period_start: dayjs('00:00', 'HH:mm'),
+      daily_summary_period_end: dayjs('23:59', 'HH:mm')
+    };
+  };
+
   const onFinish = async (values) => {
     setSaving(true);
     try {
@@ -97,11 +165,26 @@ const ConfigPage = () => {
         delete mergedConfig.runtime.daily_summary_period_start;
         delete mergedConfig.runtime.daily_summary_period_end;
       }
-      if (mergedConfig.schedule) {
-        JOBS.forEach(job => {
-          if (mergedConfig.schedule[job.id] && dayjs.isDayjs(mergedConfig.schedule[job.id])) {
-            mergedConfig.schedule[job.id] = mergedConfig.schedule[job.id].format('HH:mm');
+      if (mergedConfig.groups && Array.isArray(mergedConfig.groups)) {
+        mergedConfig.groups = mergedConfig.groups.filter(g => g && g.chat_id).map(group => {
+          const gSchedule = { ...(group.schedule || {}) };
+          JOBS.forEach(job => {
+            if (gSchedule[job.id] && dayjs.isDayjs(gSchedule[job.id])) {
+              gSchedule[job.id] = gSchedule[job.id].format('HH:mm');
+            }
+          });
+          
+          let daily_summary_period = group.daily_summary_period;
+          if (group.daily_summary_period_start && group.daily_summary_period_end) {
+            daily_summary_period = `${group.daily_summary_period_start.format('HH:mm')}-${group.daily_summary_period_end.format('HH:mm')}`;
           }
+          const groupInfo = groups.find(g => g.chat_id === group.chat_id);
+          const name = groupInfo ? groupInfo.name : '未知群组';
+          const cleanedGroup = { ...group, name, schedule: gSchedule, daily_summary_period };
+          delete cleanedGroup.daily_summary_period_start;
+          delete cleanedGroup.daily_summary_period_end;
+          
+          return cleanedGroup;
         });
       }
       await api.saveConfig(mergedConfig);
@@ -235,89 +318,33 @@ const ConfigPage = () => {
                   </Form.Item>
                 </Col>
               </Row>
-              <Row gutter={24}>
-                <Col span={24}>
-                  <Form.Item label="群聊日报统计周期" required>
-                    <Space align="baseline">
-                      <Form.Item name={['runtime', 'daily_summary_period_start']} rules={[{ required: true, message: '请选择起始时间' }]} style={{ marginBottom: 0 }}>
-                        <TimePicker format="HH:mm" placeholder="起始时间" />
-                      </Form.Item>
-                      <span style={{ margin: '0 8px' }}>至</span>
-                      <Form.Item name={['runtime', 'daily_summary_period_end']} rules={[{ required: true, message: '请选择结束时间' }]} style={{ marginBottom: 0 }}>
-                        <TimePicker format="HH:mm" placeholder="结束时间" />
-                      </Form.Item>
-                    </Space>
-                    <div style={{ fontSize: '12px', color: '#888', marginTop: 8 }}>
-                      注：若起始时间 ≥ 结束时间，则视为跨天（如 18:00 至 18:00 为昨日18点到今日18点）。
-                    </div>
-                  </Form.Item>
-                </Col>
-              </Row>
             </Card>
-
-            <Card title="定时任务设置 (Schedule Configuration)" style={{ marginBottom: 20 }}>
-              <div style={{ color: '#888', marginBottom: 16 }}>
-                注：后端服务常驻时会按这里的时间自动触发；开关可随时关闭对应任务。
-              </div>
-              {JOBS.map(job => (
-                <Row gutter={24} key={job.id} style={{ alignItems: 'center', marginBottom: 8 }}>
-                  <Col span={8}>
-                    <strong>{job.name}</strong>
-                  </Col>
-                  <Col span={10}>
-                    <Form.Item
-                      name={['schedule', job.id]}
-                      style={{ margin: 0 }}
-                      rules={[{ required: true, message: '请选择时间' }]}
-                    >
-                      <TimePicker format="HH:mm" style={{ width: '100%' }} />
-                    </Form.Item>
-                  </Col>
-                  <Col span={6}>
-                    <Form.Item name={['schedule', `${job.id}_enabled`]} valuePropName="checked" style={{ margin: 0 }}>
-                      <Switch checkedChildren="已开启" unCheckedChildren="已关闭" />
-                    </Form.Item>
-                  </Col>
-                </Row>
-              ))}
-              <Row gutter={24} style={{ alignItems: 'center', marginTop: 12 }}>
-                <Col span={8}>
-                  <strong>任务提醒频率</strong>
-                </Col>
-                <Col span={10}>
-                  <Form.Item
-                    name={['schedule', 'task_reminder_frequency_hours']}
-                    style={{ margin: 0 }}
-                    rules={[{ type: 'number', min: 1, message: '至少 1 小时' }]}
-                  >
-                    <InputNumber min={1} max={168} addonAfter="小时" style={{ width: '100%' }} />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </Card>
-          </Col>
-        </Row>
-        
-        <Row gutter={24}>
-          <Col span={24}>
-            <Card title="群组配置 (Groups)" style={{ marginBottom: 20 }}>
+            <Card title="群组配置 (Groups)" style={{ marginBottom: 20 }} extra={
+              <Button type="link" size="small" loading={groupsLoading} onClick={async () => {
+                setGroupsLoading(true);
+                try {
+                  const data = await api.fetchGroups();
+                  setGroups(data);
+                  message.success('已刷新飞书群聊列表');
+                } catch(e) {
+                  message.error('刷新群聊列表失败: ' + e.message);
+                } finally {
+                  setGroupsLoading(false);
+                }
+              }}>刷新飞书群聊</Button>
+            }>
               <Form.List name="groups">
                 {(groupFields, { add: addGroup, remove: removeGroup }) => (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
+                      <Button type="primary" onClick={() => addGroup(getDefaultGroupData())} icon={<PlusOutlined />}>
+                        添加新群组
+                      </Button>
+                    </div>
                     {groupFields.map(({ key: groupKey, name: groupName, ...restGroupField }) => (
                       <Card key={groupKey} size="small" title={`群组 ${groupName + 1}`} extra={<MinusCircleOutlined onClick={() => removeGroup(groupName)} style={{ color: '#ff4d4f' }} />}>
                         <Row gutter={16}>
-                          <Col span={8}>
-                            <Form.Item
-                              {...restGroupField}
-                              name={[groupName, 'name']}
-                              label="群组名称"
-                              rules={[{ required: true, message: '请输入群组名称' }]}
-                            >
-                              <Input placeholder="输入名称 (例如: 前端组)" />
-                            </Form.Item>
-                          </Col>
-                          <Col span={16}>
+                          <Col span={24}>
                             <Form.Item
                               {...restGroupField}
                               name={[groupName, 'chat_id']}
@@ -335,15 +362,98 @@ const ConfigPage = () => {
                                   (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
                                 }
                                 options={(() => {
-                                  const opts = groups.map(g => ({ label: g.name, value: g.chat_id }));
-                                  return opts;
+                                  const selectedChats = form.getFieldValue('groups')?.map(g => g?.chat_id).filter(Boolean) || [];
+                                  const currentChatId = form.getFieldValue(['groups', groupName, 'chat_id']);
+                                  
+                                  const combinedGroups = [...groups];
+                                  if (originalConfig && originalConfig.groups) {
+                                    originalConfig.groups.forEach(og => {
+                                      if (og.chat_id && !combinedGroups.find(g => g.chat_id === og.chat_id)) {
+                                        combinedGroups.push({ chat_id: og.chat_id, name: og.name || og.chat_id });
+                                      }
+                                    });
+                                  }
+
+                                  return combinedGroups.map(g => ({ 
+                                    label: g.name, 
+                                    value: g.chat_id,
+                                    disabled: selectedChats.includes(g.chat_id) && g.chat_id !== currentChatId
+                                  }));
                                 })()}
+                                onChange={async (val) => {
+                                  if (val) {
+                                    const hide = message.loading('获取群成员中...', 0);
+                                    try {
+                                      const members = await api.fetchGroupMembers(val);
+                                      const currentGroups = form.getFieldValue('groups') || [];
+                                      const newGroups = [...currentGroups];
+                                      newGroups[groupName] = {
+                                        ...newGroups[groupName],
+                                        members: members.map(m => ({ name: m.name, open_id: m.open_id, is_active: true }))
+                                      };
+                                      form.setFieldsValue({ groups: newGroups });
+                                      hide();
+                                      message.success('群成员已自动获取并填入！');
+                                    } catch (e) {
+                                      hide();
+                                      message.error('获取群成员失败：' + e.message);
+                                    }
+                                  }
+                                }}
                               />
                             </Form.Item>
                           </Col>
                         </Row>
+
+                        <Form.Item noStyle dependencies={[['groups', groupName, 'chat_id']]}>
+                          {() => {
+                            const currentChatId = form.getFieldValue(['groups', groupName, 'chat_id']);
+                            if (!currentChatId) return null;
+                            return (
+                              <>
+
+                        <Form.Item label="群聊日报统计周期" required style={{ marginBottom: 16 }}>
+                          <Space align="baseline">
+                            <Form.Item {...restGroupField} name={[groupName, 'daily_summary_period_start']} rules={[{ required: true, message: '请选择起始时间' }]} style={{ marginBottom: 0 }}>
+                              <TimePicker format="HH:mm" placeholder="起始时间" />
+                            </Form.Item>
+                            <span style={{ margin: '0 8px' }}>至</span>
+                            <Form.Item {...restGroupField} name={[groupName, 'daily_summary_period_end']} rules={[{ required: true, message: '请选择结束时间' }]} style={{ marginBottom: 0 }}>
+                              <TimePicker format="HH:mm" placeholder="结束时间" />
+                            </Form.Item>
+                          </Space>
+                          <div style={{ fontSize: '12px', color: '#888', marginTop: 8 }}>
+                            注：若起始时间 ≥ 结束时间，则视为跨天（如 18:00 至 18:00 为昨日18点到今日18点）。
+                          </div>
+                        </Form.Item>
                         
-                        <Form.Item label="群成员列表" style={{ marginBottom: 0 }}>
+                        <Form.Item label={
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <span style={{ marginRight: 8 }}>群成员列表</span>
+                            <Button type="link" size="small" style={{ padding: 0 }} onClick={async () => {
+                              const currentChatId = form.getFieldValue(['groups', groupName, 'chat_id']);
+                              if (!currentChatId) { message.warning('请先选择群聊'); return; }
+                              const hide = message.loading('重新获取群成员中...', 0);
+                              try {
+                                const members = await api.fetchGroupMembers(currentChatId);
+                                const currentGroups = form.getFieldValue('groups') || [];
+                                const newGroups = [...currentGroups];
+                                newGroups[groupName] = {
+                                  ...newGroups[groupName],
+                                  members: members.map(m => ({ name: m.name, open_id: m.open_id, is_active: true }))
+                                };
+                                form.setFieldsValue({ groups: newGroups });
+                                hide();
+                                message.success('群成员已重新获取！');
+                              } catch (e) {
+                                hide();
+                                message.error('获取群成员失败：' + e.message);
+                              }
+                            }}>
+                              重新拉取群成员
+                            </Button>
+                          </div>
+                        } style={{ marginBottom: 0 }}>
                           <Form.List name={[groupName, 'members']}>
                             {(memberFields, { add: addMember, remove: removeMember }) => (
                               <>
@@ -389,11 +499,47 @@ const ConfigPage = () => {
                             )}
                           </Form.List>
                         </Form.Item>
+
+                        <div style={{ marginTop: 24 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+                            <h4 style={{ margin: 0, marginRight: 12 }}>群组定时任务配置</h4>
+                            <span style={{ color: '#888', fontSize: 13 }}>注：后端服务常驻时会按这里的时间自动触发；开关可随时关闭对应任务。</span>
+                          </div>
+                          <Row gutter={[16, 16]}>
+                            {JOBS.map(job => (
+                              <Col span={12} key={job.id}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#fafafa', borderRadius: 6, border: '1px solid #f0f0f0' }}>
+                                  <span style={{ fontWeight: 500 }}>{job.name}</span>
+                                  <Space size="middle">
+                                    <Form.Item
+                                      {...restGroupField}
+                                      name={[groupName, 'schedule', job.id]}
+                                      style={{ margin: 0 }}
+                                      rules={[{ required: true, message: '请选择时间' }]}
+                                    >
+                                      <TimePicker format="HH:mm" style={{ width: 100 }} allowClear={false} />
+                                    </Form.Item>
+                                    <Form.Item
+                                      {...restGroupField}
+                                      name={[groupName, 'schedule', `${job.id}_enabled`]}
+                                      valuePropName="checked"
+                                      style={{ margin: 0 }}
+                                    >
+                                      <Switch />
+                                    </Form.Item>
+                                  </Space>
+                                </div>
+                              </Col>
+                            ))}
+                          </Row>
+                        </div>
+
+                              </>
+                            );
+                          }}
+                        </Form.Item>
                       </Card>
                     ))}
-                    <Button type="dashed" onClick={() => addGroup({ members: [] })} block icon={<PlusOutlined />}>
-                      添加新群组
-                    </Button>
                   </div>
                 )}
               </Form.List>

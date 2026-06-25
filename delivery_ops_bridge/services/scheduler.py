@@ -55,40 +55,44 @@ class InProcessScheduler:
     def tick(self, now: datetime) -> Dict[str, str]:
         handler = self.get_handler()
         results: Dict[str, str] = {}
-        for job_name, config_key in JOB_TO_CONFIG_KEY.items():
-            scheduled_time = handler.config.schedule.get(config_key)
-            if not self._is_due(scheduled_time, now):
+        for group in handler.config.groups:
+            group_id = group.chat_id
+            if not group_id:
                 continue
-            if not handler.config.schedule.get(f"{config_key}_enabled", True):
-                continue
-            key = f"scheduled:{job_name}:{now.date().isoformat()}:{scheduled_time}"
-            if handler.store.has_idempotency_key(key):
-                continue
-            handler.store.set_idempotency_key(key, {"started_at": utc_now_iso(), "job_name": job_name})
-            try:
-                payload = self._run_job(handler, job_name, now.date())
-                handler.store.set_idempotency_key(
-                    key,
-                    {"completed_at": utc_now_iso(), "job_name": job_name, "result": payload},
-                )
-                handler.store.append_audit_log(
-                    "job_completed",
-                    {"job_name": job_name, "trigger": "scheduler", "result": payload},
-                )
-                results[job_name] = "completed"
-            except Exception as exc:
-                handler.store.set_idempotency_key(
-                    key,
-                    {"failed_at": utc_now_iso(), "job_name": job_name, "error": str(exc)},
-                )
-                handler.store.append_audit_log(
-                    "job_failed",
-                    {"job_name": job_name, "trigger": "scheduler", "error": str(exc)},
-                )
-                results[job_name] = "failed"
+            for job_name, config_key in JOB_TO_CONFIG_KEY.items():
+                scheduled_time = group.schedule.get(config_key)
+                if not self._is_due(scheduled_time, now):
+                    continue
+                if not group.schedule.get(f"{config_key}_enabled", True):
+                    continue
+                key = f"scheduled:{job_name}:{group_id}:{now.date().isoformat()}:{scheduled_time}"
+                if handler.store.has_idempotency_key(key):
+                    continue
+                handler.store.set_idempotency_key(key, {"started_at": utc_now_iso(), "job_name": job_name, "group_id": group_id})
+                try:
+                    payload = self._run_job(handler, job_name, group_id, now.date())
+                    handler.store.set_idempotency_key(
+                        key,
+                        {"completed_at": utc_now_iso(), "job_name": job_name, "group_id": group_id, "result": payload},
+                    )
+                    handler.store.append_audit_log(
+                        "job_completed",
+                        {"job_name": job_name, "group_id": group_id, "trigger": "scheduler", "result": payload},
+                    )
+                    results[f"{job_name}:{group_id}"] = "completed"
+                except Exception as exc:
+                    handler.store.set_idempotency_key(
+                        key,
+                        {"failed_at": utc_now_iso(), "job_name": job_name, "group_id": group_id, "error": str(exc)},
+                    )
+                    handler.store.append_audit_log(
+                        "job_failed",
+                        {"job_name": job_name, "group_id": group_id, "trigger": "scheduler", "error": str(exc)},
+                    )
+                    results[f"{job_name}:{group_id}"] = "failed"
         return results
 
-    def _run_job(self, handler: MessageHandler, job_name: str, day: date):
+    def _run_job(self, handler: MessageHandler, job_name: str, group_id: str, day: date):
         llm = handler.intent_parser.llm if handler.intent_parser else None
         dashboard = DashboardService(
             handler.store,
@@ -106,7 +110,7 @@ class InProcessScheduler:
             "daily-summary": jobs.daily_summary,
             "dashboard": jobs.dashboard_generate,
         }
-        return methods[job_name](day)
+        return methods[job_name](group_id, day)
 
     def _is_due(self, scheduled_time, now: datetime) -> bool:
         if not isinstance(scheduled_time, str):

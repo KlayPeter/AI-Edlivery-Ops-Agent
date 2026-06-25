@@ -310,6 +310,25 @@ class FeishuAdapter:
             pass
         return []
 
+    def list_group_members(self, chat_id: str) -> List[Dict[str, str]]:
+        if self.dry_run or not chat_id:
+            return []
+        cmd = [
+            self.config.lark_cli_path,
+            "api", "GET", f"/open-apis/im/v1/chats/{chat_id}/members",
+            "--as", "bot",
+            "--params", '{"member_id_type":"open_id"}'
+        ]
+        try:
+            proc = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=15)
+            if proc.returncode == 0:
+                raw = self._parse_json_output(proc.stdout)
+                items = raw.get("data", {}).get("items", [])
+                return [{"open_id": item["member_id"], "name": item["name"]} for item in items if "member_id" in item and "name" in item]
+        except Exception:
+            pass
+        return []
+
     def fetch_chat_history(
         self,
         chat_id: str,

@@ -52,12 +52,22 @@ const formatDate = (value) => {
 
 const ContextsPage = () => {
   const [contexts, setContexts] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState({ current: 1, pageSize: 15, total: 0 });
   const [members, setMembers] = useState([]);
   const [filters, setFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private', targetOpenId: 'all' });
   const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private', targetOpenId: 'all' });
+
+  
+  useEffect(() => {
+    api.fetchConfig().then(cfg => {
+      if (cfg.groups) {
+        setGroups(cfg.groups);
+      }
+    }).catch(console.error);
+  }, []);
 
   const fetchContexts = async (page, pageSize, filtersToApply = {}) => {
     setLoading(true);
@@ -222,6 +232,17 @@ const ContextsPage = () => {
             ))}
           </Select>
         )}
+        
+        <Select
+          style={{ width: 150 }}
+          value={filters.groupId}
+          onChange={(val) => setFilters({...filters, groupId: val})}
+          placeholder="筛选群聊"
+        >
+          <Select.Option value="all">所有群聊</Select.Option>
+          {groups.map(g => <Select.Option key={g.chat_id} value={g.chat_id}>{g.name || g.chat_id}</Select.Option>)}
+        </Select>
+
         <Space>
           <Button type="primary" onClick={handleSearch}>查询</Button>
           <Button onClick={handleReset}>重置</Button>

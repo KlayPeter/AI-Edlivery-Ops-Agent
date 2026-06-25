@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Typography, Card, Button, Row, Col, message } from 'antd';
+import { useState, useEffect } from 'react';
+import { Typography, Card, Button, Row, Col, message, Select, Space } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
 import { api } from '../api';
 
@@ -16,11 +16,33 @@ const JOBS = [
 
 const DebugPage = () => {
   const [runningJob, setRunningJob] = useState(null);
+  const [groups, setGroups] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState('');
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const config = await api.fetchConfig();
+        const configGroups = config.groups || [];
+        setGroups(configGroups);
+        if (configGroups.length > 0) {
+          setSelectedGroup(configGroups[0].chat_id);
+        }
+      } catch (err) {
+        console.error('Failed to fetch config for debug page:', err);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   const handleRun = async (jobId) => {
+    if (!selectedGroup) {
+      message.warning('请先选择目标群聊');
+      return;
+    }
     setRunningJob(jobId);
     try {
-      const res = await api.triggerJob(jobId, false);
+      const res = await api.triggerJob(jobId, selectedGroup, false);
       if (res.ok) {
         message.success(res.message || `任务 ${jobId} 运行完成`);
       } else {
@@ -37,6 +59,16 @@ const DebugPage = () => {
     <div style={{ padding: '24px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0 }}>流程调试面板</Title>
+        <Space>
+          <span>目标群聊：</span>
+          <Select 
+            value={selectedGroup} 
+            onChange={setSelectedGroup} 
+            style={{ width: 180 }}
+            placeholder="请选择群聊"
+            options={groups.map(g => ({ label: g.name || g.chat_id, value: g.chat_id }))}
+          />
+        </Space>
       </div>
 
       <Row gutter={[24, 24]}>

@@ -48,6 +48,7 @@ export const api = {
     if (filters.startDate) url += `&startDate=${filters.startDate}`;
     if (filters.endDate) url += `&endDate=${filters.endDate}`;
     if (filters.eventType && filters.eventType !== 'all') url += `&eventType=${filters.eventType}`;
+    if (filters.groupId && filters.groupId !== 'all') url += `&groupId=${filters.groupId}`;
     const data = await request(client.get(url));
     return data;
   },
@@ -58,6 +59,7 @@ export const api = {
     if (filters.contextType && filters.contextType !== 'all') url += `&contextType=${filters.contextType}`;
     if (filters.chatType && filters.chatType !== 'all') url += `&chatType=${filters.chatType}`;
     if (filters.targetOpenId && filters.targetOpenId !== 'all') url += `&targetOpenId=${filters.targetOpenId}`;
+    if (filters.groupId && filters.groupId !== 'all') url += `&groupId=${filters.groupId}`;
     const data = await request(client.get(url));
     return data;
   },
@@ -65,6 +67,10 @@ export const api = {
     const data = await request(client.get("/feishu/groups"));
     return safeArray(data.groups);
   },
-  fetchStandups: (date) => request(client.get(`/standups?date=${date}`)),
-  triggerJob: (jobName, dryRun = true) => request(client.post(`/jobs/${encodeURIComponent(jobName)}`, { dryRun })),
+  fetchGroupMembers: async (chatId) => {
+    const data = await request(client.get(`/feishu/groups/${chatId}/members`));
+    return safeArray(data.members);
+  },
+  fetchStandups: (date, groupId) => request(client.get(`/standups?date=${date}${groupId ? '&groupId=' + encodeURIComponent(groupId) : ''}`)),
+  triggerJob: (jobName, groupId, dryRun = true) => request(client.post(`/jobs/${encodeURIComponent(jobName)}`, { groupId, dryRun })),
 };

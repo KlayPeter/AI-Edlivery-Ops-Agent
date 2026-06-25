@@ -13,11 +13,15 @@ export default function StandupsPage() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedStandup, setSelectedStandup] = useState(null);
+  
+  const [groups, setGroups] = useState([]);
+  const [selectedGroup, setSelectedGroup] = useState('');
 
-  const fetchStandups = async (dateStr) => {
+  const fetchStandups = async (dateStr, groupId) => {
+    if (!groupId) return; // Wait for group to be selected
     setLoading(true);
     try {
-      const json = await api.fetchStandups(dateStr);
+      const json = await api.fetchStandups(dateStr, groupId);
       setData(json);
     } catch (err) {
       console.error(err);
@@ -28,8 +32,28 @@ export default function StandupsPage() {
   };
 
   useEffect(() => {
-    fetchStandups(selectedDate.format('YYYY-MM-DD'));
-  }, [selectedDate]);
+    const init = async () => {
+      try {
+        const config = await api.fetchConfig();
+        const configGroups = config.groups || [];
+        setGroups(configGroups);
+        if (configGroups.length > 0) {
+          setSelectedGroup(configGroups[0].chat_id);
+        } else {
+          setData(null);
+        }
+      } catch (e) {
+        console.error("Failed to fetch config", e);
+      }
+    };
+    init();
+  }, []);
+
+  useEffect(() => {
+    if (selectedGroup) {
+      fetchStandups(selectedDate.format('YYYY-MM-DD'), selectedGroup);
+    }
+  }, [selectedDate, selectedGroup]);
 
   const columns = [
     {
@@ -80,6 +104,13 @@ export default function StandupsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <Title level={3} style={{ margin: 0 }}>站会统计</Title>
         <Space>
+          <Select 
+            value={selectedGroup} 
+            onChange={setSelectedGroup} 
+            style={{ width: 180 }}
+            placeholder="请选择所属群组"
+            options={groups.map(g => ({ label: g.name || g.chat_id, value: g.chat_id }))}
+          />
           <Select value={filterStatus} onChange={setFilterStatus} style={{ width: 120 }}>
             <Select.Option value="all">全部状态</Select.Option>
             <Select.Option value="submitted">已提交</Select.Option>

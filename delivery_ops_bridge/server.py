@@ -114,6 +114,7 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             event_type = query_components.get("eventType", "")
             start_date = query_components.get("startDate", "")
             end_date = query_components.get("endDate", "")
+            group_id = query_components.get("groupId", "")
             
             logs_path = self.bridge.config.data_path / "logs" / "audit.jsonl"
             if not logs_path.exists():
@@ -139,6 +140,11 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                                 continue
                             if end_date and ts > end_date + "T23:59:59Z":
                                 continue
+                            if group_id:
+                                payload = item.get("payload") or {}
+                                item_group = payload.get("group_id") or payload.get("source_group_id") or payload.get("chat_id")
+                                if item_group != group_id:
+                                    continue
                                 
                             logs.append(item)
             except Exception:
@@ -167,6 +173,7 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             end_date = query_components.get("endDate", "")
             chat_type = query_components.get("chatType", "")
             target_open_id = query_components.get("targetOpenId", "")
+            group_id = query_components.get("groupId", "")
             
             all_contexts = self.bridge.store.list_bot_message_contexts()
             all_contexts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
@@ -182,6 +189,11 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                     continue
                 if target_open_id and ctx.get("target_open_id") != target_open_id:
                     continue
+                if group_id:
+                    ctx_group_id = ctx.get("chat_id")
+                    meta_group_id = ctx.get("metadata", {}).get("group_id")
+                    if ctx_group_id != group_id and meta_group_id != group_id:
+                        continue
                 
                 saved_chat_type = ctx.get("chat_type", "")
                 if saved_chat_type:
@@ -206,12 +218,13 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                         ctx["target_name"] = member.name
                 
                 chat_id = ctx.get("chat_id")
-                if chat_id and not target_id:
+                if chat_id:
                     group = self.bridge.config.group_by_chat_id(chat_id)
                     if group:
                         ctx["chat_name"] = group.name
                     else:
-                        ctx["chat_name"] = "其他群聊"
+                        if ctx.get("is_group"):
+                            ctx["chat_name"] = "其他群聊"
                         
             total = len(filtered_contexts)
             start_idx = (page - 1) * page_size
@@ -231,8 +244,16 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             from .models import utc_now_iso
             target_date = query_components.get("date", utc_now_iso()[:10])
             
-            all_members = self.bridge.config.members
-            submitted_standups = self.bridge.store.list_standups(target_date)
+            group_id = query_components.get("groupId", "")
+            
+            all_members_dict = {}
+            for g in self.bridge.config.groups:
+                if group_id and g.chat_id != group_id:
+                    continue
+                for m in g.members:
+                    all_members_dict[m.open_id] = m
+            all_members = list(all_members_dict.values())
+            submitted_standups = self.bridge.store.list_standups(target_date, group_id=group_id if group_id else None)
             submitted_map = {s.get("open_id"): s for s in submitted_standups}
             
             members_data = []
@@ -266,6 +287,15 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
             try:
                 groups = self.bridge.feishu.list_groups()
                 self._json_response(200, {"groups": groups})
+            except Exception as e:
+                self._json_response(500, {"error": str(e)})
+            return
+
+        if path.startswith("/api/feishu/groups/") and path.endswith("/members"):
+            chat_id = path.split("/")[4]
+            try:
+                members = self.bridge.feishu.list_group_members(chat_id)
+                self._json_response(200, {"members": members})
             except Exception as e:
                 self._json_response(500, {"error": str(e)})
             return
@@ -312,6 +342,9 @@ class DeliveryOpsRequestHandler(BaseHTTPRequestHandler):
                     if dry_run:
                         cmd.append("--dry-run")
                     cmd.extend(["job", job_name])
+                    group_id = payload.get("groupId")
+                    if group_id:
+                        cmd.extend(["--group-id", group_id])
                     process = subprocess.run(
                         cmd,
                         cwd=str(self.bridge.config.root_path),

@@ -643,7 +643,7 @@ def test_overdue_scan_sends_staged_reminders_and_logs_status(handler):
     handler.feishu.send_group_text = lambda text, chat_id=None: group_messages.append((chat_id, text)) or SendResult(ok=True, raw={})
     jobs = ScheduledJobs(handler.config, handler.store, handler.feishu, handler.dashboard)
 
-    result = jobs.overdue_scan(base_day)
+    result = jobs.overdue_scan('oc_group', base_day)
 
     assert result == {"due_tomorrow": 1, "due_today": 1, "overdue_day1": 1, "overdue_risk": 1}
     assert len(private_messages) == 4
@@ -659,7 +659,7 @@ def test_overdue_scan_sends_staged_reminders_and_logs_status(handler):
 
     private_messages.clear()
     group_messages.clear()
-    second = jobs.overdue_scan(base_day)
+    second = jobs.overdue_scan('oc_group', base_day)
 
     assert second == {"due_tomorrow": 0, "due_today": 0, "overdue_day1": 0, "overdue_risk": 0}
     assert private_messages == []
@@ -671,8 +671,8 @@ def test_standup_second_remind_and_mark_missing_records_missing_members(handler)
     handler.feishu.send_private_text = lambda open_id, text: private_messages.append((open_id, text)) or SendResult(ok=True, raw={})
     jobs = ScheduledJobs(handler.config, handler.store, handler.feishu, handler.dashboard)
 
-    reminded = jobs.standup_second_remind(date(2026, 6, 22))
-    marked = jobs.standup_mark_missing(date(2026, 6, 22))
+    reminded = jobs.standup_second_remind('oc_group', date(2026, 6, 22))
+    marked = jobs.standup_mark_missing('oc_group', date(2026, 6, 22))
 
     assert reminded == {"reminded": 3, "stage": "second"}
     assert marked == {"missing": 3}
@@ -719,7 +719,7 @@ def test_daily_summary_backfills_group_history_before_rendering(handler):
     handler.feishu.send_group_text = lambda text, chat_id=None: group_messages.append((chat_id, text)) or SendResult(ok=True, raw={})
     jobs = ScheduledJobs(handler.config, handler.store, handler.feishu, handler.dashboard)
 
-    result = jobs.daily_summary(date(2026, 6, 18))
+    result = jobs.daily_summary('oc_group', date(2026, 6, 18))
 
     assert "summary-2026-06-18" in result["summary_ids"]
     assert len(history_calls) == 1
@@ -739,7 +739,7 @@ def test_daily_summary_logs_history_sync_failure_and_falls_back(handler):
     handler.handle_event(feishu_event("测试环境无法登录。", message_id="om_summary_history_fallback", mentions=[]))
     jobs = ScheduledJobs(handler.config, handler.store, handler.feishu, handler.dashboard)
 
-    jobs.daily_summary(date(2026, 6, 18))
+    jobs.daily_summary('oc_group', date(2026, 6, 18))
 
     assert group_messages
     assert "测试环境无法登录" in group_messages[0][1]
@@ -757,7 +757,7 @@ def test_scheduler_runs_configured_job_once(handler):
     first = scheduler.tick(datetime(2026, 6, 22, 11, 0))
     second = scheduler.tick(datetime(2026, 6, 22, 11, 0))
 
-    assert first == {"standup-mark-missing": "completed"}
+    assert first == {"standup-mark-missing:oc_group": "completed"}
     assert second == {}
     assert handler.store.get_standup_missing("2026-06-22")["missing"] == 3
 

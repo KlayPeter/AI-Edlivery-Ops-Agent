@@ -49,6 +49,8 @@ class GroupConfig:
     chat_id: str
     name: str
     members: List[Member] = field(default_factory=list)
+    schedule: Dict[str, Any] = field(default_factory=dict)
+    daily_summary_period: str = "00:00-23:59"
 
     def member_by_open_id(self, open_id: str) -> Member | None:
         for member in self.members:
@@ -191,7 +193,9 @@ def build_config(raw: Dict[str, Any], raw_path: Path | None = None) -> AppConfig
             groups.append(GroupConfig(
                 chat_id=group_raw.get("chat_id", ""),
                 name=group_raw.get("name", ""),
-                members=[Member(**m) for m in group_raw.get("members", [])]
+                members=[Member(**m) for m in group_raw.get("members", [])],
+                schedule=_normalize_schedule(group_raw.get("schedule", schedule)),
+                daily_summary_period=group_raw.get("daily_summary_period", runtime.daily_summary_period)
             ))
     else:
         old_group_id = feishu_raw.get("group_chat_id", "")
@@ -201,7 +205,9 @@ def build_config(raw: Dict[str, Any], raw_path: Path | None = None) -> AppConfig
             groups.append(GroupConfig(
                 chat_id=old_group_id,
                 name=old_group_name,
-                members=old_members
+                members=old_members,
+                schedule=schedule,
+                daily_summary_period=runtime.daily_summary_period
             ))
 
     return AppConfig(

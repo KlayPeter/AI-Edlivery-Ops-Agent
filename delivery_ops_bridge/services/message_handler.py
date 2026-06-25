@@ -265,13 +265,13 @@ class MessageHandler:
 
         target_day = self._parse_summary_day(text, message)
         jobs = ScheduledJobs(self.config, self.store, self.feishu, self.dashboard)
-        period = self.config.runtime.daily_summary_period
         
         target_group = self.config.group_by_chat_id(message.chat_id)
         if not target_group:
             self._reply(message, "private", "晚报生成只能在群聊中触发，或者我无法识别您所在的群聊。")
             return {"handled": True, "action": "daily_summary_failed"}
 
+        period = target_group.daily_summary_period
         jobs._backfill_group_messages_for_summary(target_group.chat_id, target_day, period)
         llm = getattr(self.intent_parser, "llm", None) if self.intent_parser else None
         summary = build_daily_summary(self.store, target_group.chat_id, target_day, llm, period)

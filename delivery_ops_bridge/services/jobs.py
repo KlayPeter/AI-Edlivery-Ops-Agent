@@ -28,18 +28,16 @@ class ScheduledJobs:
         self.dashboard = dashboard
         self.llm = llm
 
-    def standup_push(self, day: date | None = None) -> Dict[str, int]:
+    def standup_push(self, group_id: str, day: date | None = None) -> Dict[str, int]:
         day = day or date.today()
         count = 0
-        seen_open_ids = set()
-        for group in self.config.groups:
+        for group in [g for g in self.config.groups if g.chat_id == group_id]:
             for member in group.members:
-                if not member.is_active or member.open_id in seen_open_ids:
+                if not member.is_active:
                     continue
-                seen_open_ids.add(member.open_id)
                 result = self.feishu.send_private_text(
                     member.open_id,
-                    f"每日站会（{day.isoformat()}）\\n\\n{member.name}，请回复以下内容：\\n\\n【昨日完成】\\n1.\\n\\n【今日计划】\\n1.\\n\\n【阻塞/需要帮助】\\n无\\n\\n【风险/可能延期】\\n无\\n\\n【需要决策】\\n无",
+                    f"【{group.name or group.chat_id}】每日站会（{day.isoformat()}）\n\n{member.name}，请回复以下内容：\n\n【昨日完成】\n1.\n\n【今日计划】\n1.\n\n【阻塞/需要帮助】\n无\n\n【风险/可能延期】\n无\n\n【需要决策】\n无",
                 )
                 if result.chat_id:
                     self.store.update_chat_id(member.open_id, result.chat_id)
@@ -52,21 +50,21 @@ class ScheduledJobs:
                             chat_id=result.chat_id or "",
                             chat_type="p2p",
                             target_open_id=member.open_id,
-                            metadata={"date": day.isoformat()},
+                            metadata={"date": day.isoformat(), "group_id": group.chat_id},
                         )
                     )
                 count += 1
         return {"sent": count}
 
-    def standup_remind(self, day: date | None = None) -> Dict[str, int]:
-        return self._standup_remind(day, stage="first")
+    def standup_remind(self, group_id: str, day: date | None = None) -> Dict[str, int]:
+        return self._standup_remind(group_id, day, stage="first")
 
-    def standup_second_remind(self, day: date | None = None) -> Dict[str, int]:
-        return self._standup_remind(day, stage="second")
+    def standup_second_remind(self, group_id: str, day: date | None = None) -> Dict[str, int]:
+        return self._standup_remind(group_id, day, stage="second")
 
-    def _standup_remind(self, day: date | None = None, stage: str = "first") -> Dict[str, int]:
+    def _standup_remind(self, group_id: str, day: date | None = None, stage: str = "first") -> Dict[str, int]:
         day = day or date.today()
-        missing = self._missing_standup_members(day)
+        missing = self._missing_standup_members(group_id, day)
         count = 0
         stage_text = "今日站会还未提交，请方便时补充一下。"
         if stage == "second":
@@ -86,9 +84,9 @@ class ScheduledJobs:
         )
         return {"reminded": count, "stage": stage}
 
-    def standup_mark_missing(self, day: date | None = None) -> Dict[str, int]:
+    def standup_mark_missing(self, group_id: str, day: date | None = None) -> Dict[str, int]:
         day = day or date.today()
-        missing = self._missing_standup_members(day)
+        missing = self._missing_standup_members(group_id, day)
         payload = {
             "date": day.isoformat(),
             "missing": len(missing),
@@ -99,29 +97,29 @@ class ScheduledJobs:
         self.store.append_audit_log("standup_missing_marked", payload)
         return {"missing": len(missing)}
 
-    def standup_summary(self, day: date | None = None) -> Dict[str, int]:
+    def standup_summary(self, group_id: str, day: date | None = None) -> Dict[str, int]:
         day = day or date.today()
         total_submitted = 0
         total_missing = 0
         all_standups = self.store.list_standups(day.isoformat())
         
-        for group in self.config.groups:
+        for group in [g for g in self.config.groups if g.chat_id == group_id]:
             group_open_ids = {m.open_id for m in group.members}
             standups = [s for s in all_standups if s.get("open_id") in group_open_ids]
             submitted = {item.get("open_id") for item in standups}
             missing = [member.name for member in group.members if member.is_active and member.open_id not in submitted]
             
             if not standups:
-                missing_text = f"七、未提交情况\\n- 未提交人数：{len(missing)}"
+                missing_text = f"七、未提交情况\n- 未提交人数：{len(missing)}"
                 if self.config.runtime.public_missing_standups and missing:
-                    missing_text += f"\\n- 未提交成员：{'、'.join(missing)}"
-                self.feishu.send_group_text(f"【今日站会汇总｜{day.isoformat()}】\\n\\n暂无站会提交。\\n\\n{missing_text}", group.chat_id)
+                    missing_text += f"\n- 未提交成员：{'、'.join(missing)}"
+                self.feishu.send_group_text(f"【今日站会汇总｜{day.isoformat()}】\n\n暂无站会提交。\n\n{missing_text}", group.chat_id)
                 total_missing += len(missing)
                 continue
 
             missing_text = f"- 未提交人数：{len(missing)}"
             if self.config.runtime.public_missing_standups and missing:
-                missing_text += f"\\n- 未提交成员：{'、'.join(missing)}"
+                missing_text += f"\n- 未提交成员：{'、'.join(missing)}"
 
             sent_ai = False
             if self.llm:
@@ -137,36 +135,36 @@ class ScheduledJobs:
                     for s in standups
                 ], ensure_ascii=False)
                 prompt = (
-                    f"你是研发团队助理，请根据以下 JSON 格式的成员站会提交记录，生成今日站会汇总报告。\\n"
-                    f"请严格按照以下格式输出，如果没有相关内容，请在该模块下写“暂无”：\\n\\n"
-                    f"【今日站会汇总｜{day.isoformat()}】\\n\\n"
-                    f"一、团队今日重点\\n"
-                    f"1. xxx\\n\\n"
-                    f"二、昨日完成\\n"
-                    f"- 张三：xxx\\n\\n"
-                    f"三、今日计划\\n"
-                    f"- 张三：xxx\\n\\n"
-                    f"四、阻塞/需要帮助\\n"
-                    f"1. [发起人姓名]：xxx\\n"
-                    f"   - 相关人：xxx\\n"
-                    f"   - 建议动作：xxx\\n\\n"
-                    f"五、风险/可能延期\\n"
-                    f"1. [发起人姓名]：xxx\\n"
-                    f"   - 风险等级：高 / 中 / 低\\n"
-                    f"   - 建议动作：xxx\\n\\n"
-                    f"六、需要决策\\n"
-                    f"1. [发起人姓名]：xxx\\n"
-                    f"   - 建议决策人：xxx\\n\\n"
+                    f"你是研发团队助理，请根据以下 JSON 格式的成员站会提交记录，生成今日站会汇总报告。\n"
+                    f"请严格按照以下格式输出，如果没有相关内容，请在该模块下写“暂无”：\n\n"
+                    f"【今日站会汇总｜{day.isoformat()}】\n\n"
+                    f"一、团队今日重点\n"
+                    f"1. xxx\n\n"
+                    f"二、昨日完成\n"
+                    f"- 张三：xxx\n\n"
+                    f"三、今日计划\n"
+                    f"- 张三：xxx\n\n"
+                    f"四、阻塞/需要帮助\n"
+                    f"1. [发起人姓名]：xxx\n"
+                    f"   - 相关人：xxx\n"
+                    f"   - 建议动作：xxx\n\n"
+                    f"五、风险/可能延期\n"
+                    f"1. [发起人姓名]：xxx\n"
+                    f"   - 风险等级：高 / 中 / 低\n"
+                    f"   - 建议动作：xxx\n\n"
+                    f"六、需要决策\n"
+                    f"1. [发起人姓名]：xxx\n"
+                    f"   - 建议决策人：xxx\n\n"
                     f"请保持格式完全一致，不要输出多余的Markdown代码块符号（如```）。"
                 )
                 res = self.llm.chat(prompt, payload)
                 if res.ok and res.content.strip():
                     text = res.content.strip()
                     if text.startswith("```"):
-                        lines = text.split("\\n")
+                        lines = text.split("\n")
                         if len(lines) > 2:
-                            text = "\\n".join(lines[1:-1]).strip()
-                    text += f"\\n\\n七、未提交情况\\n{missing_text}"
+                            text = "\n".join(lines[1:-1]).strip()
+                    text += f"\n\n七、未提交情况\n{missing_text}"
                     self.feishu.send_group_text(text, group.chat_id)
                     total_submitted += len(standups)
                     total_missing += len(missing)
@@ -196,17 +194,17 @@ class ScheduledJobs:
                 else:
                     lines.append("暂无。")
                 lines.extend(["", "五、风险/可能延期", "暂无。", "", "六、需要决策", "暂无。", "", "七、未提交情况", missing_text])
-                self.feishu.send_group_text("\\n".join(lines), group.chat_id)
+                self.feishu.send_group_text("\n".join(lines), group.chat_id)
                 total_submitted += len(standups)
                 total_missing += len(missing)
                 
         return {"submitted": total_submitted, "missing": total_missing}
 
-    def daily_summary(self, day: date | None = None) -> Dict[str, str]:
+    def daily_summary(self, group_id: str, day: date | None = None) -> Dict[str, str]:
         day = day or date.today()
-        period = self.config.runtime.daily_summary_period
         summary_ids = []
-        for group in self.config.groups:
+        for group in [g for g in self.config.groups if g.chat_id == group_id]:
+            period = group.daily_summary_period
             self._backfill_group_messages_for_summary(group.chat_id, day, period)
             summary = build_daily_summary(self.store, group.chat_id, day, self.llm, period)
             self.store.save_daily_summary(summary)
@@ -215,10 +213,10 @@ class ScheduledJobs:
             summary_ids.append(summary.id)
         return {"summary_ids": ",".join(summary_ids)}
 
-    def dashboard_generate(self, day: date | None = None) -> Dict[str, str]:
+    def dashboard_generate(self, group_id: str, day: date | None = None) -> Dict[str, str]:
         day = day or date.today()
         urls = []
-        for group in self.config.groups:
+        for group in [g for g in self.config.groups if g.chat_id == group_id]:
             artifact = self.dashboard.generate_for_group(group, day)
             publish = self.feishu.publish_file(artifact.html_path)
             if publish.url:
@@ -241,16 +239,16 @@ class ScheduledJobs:
             urls.append(artifact.public_url or artifact.html_path)
         return {"artifacts": ",".join(urls)}
 
-    def overdue_scan(self, day: date | None = None) -> Dict[str, int]:
+    def overdue_scan(self, group_id: str, day: date | None = None) -> Dict[str, int]:
         day = day or date.today()
         counts = {"due_tomorrow": 0, "due_today": 0, "overdue_day1": 0, "overdue_risk": 0}
-        risk_items = {group.chat_id: [] for group in self.config.groups}
+        risk_items = {group.chat_id: [] for group in [g for g in self.config.groups if g.chat_id == group_id]}
         for raw_task in self.store.list_tasks():
             due = raw_task.get("due_date")
             if not due or raw_task.get("status") in {TASK_STATUS_ACCEPTED, TASK_STATUS_CANCELLED}:
                 continue
-            group_id = raw_task.get("source_group_id")
-            if group_id not in risk_items:
+            task_group_id = raw_task.get("source_group_id")
+            if task_group_id not in risk_items:
                 continue
             try:
                 due_date = date.fromisoformat(due)
@@ -274,8 +272,8 @@ class ScheduledJobs:
                 if self._send_due_reminder_once(raw_task, day, "overdue_risk", f"这个任务已超期超过 2 天，已进入日报和看板风险，请尽快更新进展。\n任务：{raw_task.get('title')}\n原截止时间：{due}"):
                     counts["overdue_risk"] += 1
                     owner_text = f"，负责人：{raw_task.get('primary_owner_name', '')}" if self.config.runtime.public_overdue_owners else ""
-                    risk_items[group_id].append(f"{len(risk_items[group_id]) + 1}. {raw_task.get('title')}，原定 {due} 完成{owner_text}，当前仍未完成。")
-        for group in self.config.groups:
+                    risk_items[task_group_id].append(f"{len(risk_items[group_id]) + 1}. {raw_task.get('title')}，原定 {due} 完成{owner_text}，当前仍未完成。")
+        for group in [g for g in self.config.groups if g.chat_id == group_id]:
             if risk_items[group.chat_id]:
                 self.feishu.send_group_text("以下任务存在延期风险：\n" + "\n".join(risk_items[group.chat_id]), group.chat_id)
         return counts
@@ -335,10 +333,10 @@ class ScheduledJobs:
         except ValueError:
             return None
 
-    def _missing_standup_members(self, day: date) -> List[Any]:
+    def _missing_standup_members(self, group_id: str, day: date) -> List[Any]:
         submitted = {item.get("open_id") for item in self.store.list_standups(day.isoformat())}
         missing = {}
-        for group in self.config.groups:
+        for group in [g for g in self.config.groups if g.chat_id == group_id]:
             for member in group.members:
                 if member.is_active and member.open_id not in submitted:
                     missing[member.open_id] = member

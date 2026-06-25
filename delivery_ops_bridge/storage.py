@@ -109,17 +109,29 @@ class JsonStore:
         return updates
 
     def save_standup(self, standup: Standup) -> None:
-        path = self.data_dir / "standups" / standup.date / f"{standup.open_id}.json"
+        group_path = standup.source_group_id if standup.source_group_id else "global"
+        path = self.data_dir / "standups" / standup.date / group_path / f"{standup.open_id}.json"
         self._write_json(path, to_dict(standup))
 
-    def list_standups(self, date: str) -> List[Dict[str, Any]]:
-        path = self.data_dir / "standups" / date
-        if not path.exists():
+    def list_standups(self, date: str, group_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        base_path = self.data_dir / "standups" / date
+        if not base_path.exists():
             return []
-        return sorted(
-            [self._read_json(item, {}) for item in path.glob("*.json")],
-            key=lambda item: item.get("user_name", ""),
-        )
+            
+        items = []
+        if group_id:
+            group_path = base_path / group_id
+            if group_path.exists():
+                for item in group_path.glob("*.json"):
+                    items.append(self._read_json(item, {}))
+            # Fallback for old global data
+            for item in base_path.glob("*.json"):
+                items.append(self._read_json(item, {}))
+        else:
+            for item in base_path.rglob("*.json"):
+                items.append(self._read_json(item, {}))
+                
+        return sorted(items, key=lambda item: item.get("user_name", ""))
 
     def save_standup_missing(self, date: str, payload: Dict[str, Any]) -> None:
         self._write_json(self.data_dir / "standup_missing" / f"{date}.json", payload)
@@ -134,7 +146,7 @@ class JsonStore:
         self._write_json(self.data_dir / "summaries" / f"{summary.date}.json", to_dict(summary))
 
     def save_dashboard_artifact(self, artifact: DashboardArtifact) -> None:
-        self._write_json(self.data_dir / "dashboards" / f"artifact-{artifact.date}.json", to_dict(artifact))
+        self._write_json(self.data_dir / "dashboards" / f"{artifact.id}.json", to_dict(artifact))
 
     def save_bot_message_context(self, context: BotMessageContext) -> None:
         self._write_json(self.data_dir / "contexts" / f"{context.message_id}.json", to_dict(context))

@@ -9,11 +9,21 @@ const { RangePicker } = DatePicker;
 
 const LogsPage = () => {
   const [logs, setLogs] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
-  const [filters, setFilters] = useState({ startDate: null, endDate: null, eventType: 'all' });
-  const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, eventType: 'all' });
+  const [filters, setFilters] = useState({ startDate: null, endDate: null, eventType: 'all', groupId: 'all' });
+  const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, eventType: 'all', groupId: 'all' });
+
+  
+  useEffect(() => {
+    api.fetchConfig().then(cfg => {
+      if (cfg.groups) {
+        setGroups(cfg.groups);
+      }
+    }).catch(console.error);
+  }, []);
 
   const fetchLogs = async (page, pageSize, filtersToApply = {}) => {
     setLoading(true);
@@ -43,7 +53,7 @@ const LogsPage = () => {
   };
 
   const handleReset = () => {
-    const defaultFilters = { startDate: null, endDate: null, eventType: 'all' };
+    const defaultFilters = { startDate: null, endDate: null, eventType: 'all', groupId: 'all' };
     setFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
     setPagination(prev => ({ ...prev, current: 1 }));
@@ -56,6 +66,18 @@ const LogsPage = () => {
       key: 'timestamp',
       width: 200,
       render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
+    },
+    {
+      title: '所属群组',
+      key: 'group_id',
+      width: 150,
+      render: (_, record) => {
+        const payload = record.details || record.payload || record;
+        const gid = payload.group_id || payload.source_group_id || payload.chat_id;
+        if (!gid) return <Text type="secondary">-</Text>;
+        const group = groups.find(g => g.chat_id === gid);
+        return <Tag color="blue">{group ? group.name || gid : gid}</Tag>;
+      }
     },
     {
       title: '事件类型',
@@ -112,6 +134,17 @@ const LogsPage = () => {
             <Select.Option key={key} value={key}>{val.text}</Select.Option>
           ))}
         </Select>
+        
+        <Select
+          style={{ width: 150 }}
+          value={filters.groupId}
+          onChange={(val) => setFilters({...filters, groupId: val})}
+          placeholder="筛选群聊"
+        >
+          <Select.Option value="all">所有群聊</Select.Option>
+          {groups.map(g => <Select.Option key={g.chat_id} value={g.chat_id}>{g.name || g.chat_id}</Select.Option>)}
+        </Select>
+
         <Space>
           <Button type="primary" onClick={handleSearch}>查询</Button>
           <Button onClick={handleReset}>重置</Button>
