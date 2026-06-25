@@ -1,167 +1,86 @@
 <div align="center">
   <h1>🚀 Delivery Ops Bridge</h1>
-  <p>
-    <strong>A high-performance, event-driven AI Delivery & Operations Middle-End</strong>
-  </p>
+  <p><strong>智能化研发交付中台：打通飞书、TAPD 与 AI，告别低效项目管理</strong></p>
   <p>
     <img src="https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white" alt="Bun" />
+    <img src="https://img.shields.io/badge/React-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB" alt="React" />
     <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-    <img src="https://img.shields.io/badge/Elysia-000000?style=for-the-badge" alt="Elysia" />
     <img src="https://img.shields.io/badge/Feishu-00B2FF?style=for-the-badge&logo=feishu&logoColor=white" alt="Feishu" />
-    <img src="https://img.shields.io/badge/TAPD-FF6A00?style=for-the-badge&logo=tencent&logoColor=white" alt="TAPD" />
   </p>
 </div>
 
 <br />
 
-**Delivery Ops Bridge** 是一个专为敏捷研发团队打造的智能化交付中台，旨在**彻底消灭研发过程中的低效管理摩擦**。
-
-你是否厌倦了：
-- 🤬 每天被打断去 TAPD/Jira 里填写繁琐的工单和更改状态？
-- 🥱 每天定时的站会变成流水账，或者总有人忘记写日报？
-- 🤯 项目进度不透明，项目经理和 Leader 每天要在群里四处追问“这个提测了吗”、“那个阻塞在哪”？
-
-**Delivery Ops Bridge 就是为了解决这些痛点而生！** 它将 **飞书 (Feishu)** 的即时沟通能力、**TAPD** 的工单数据底座，与 **AI 大模型 (OpenAI / DeepSeek)** 的深度语义理解能力无缝融合。
-它把冰冷的管理系统变成了你的“私人研发助理”：**你只需要在熟悉的聊天框里用自然语言对话，剩下的建单、状态流转、进度催办、报告汇总等所有脏活累活，全部由 AI 自动化代劳。**
+**Delivery Ops Bridge** 是专为敏捷团队打造的智能化中台，提供从 **React 前端管理面板** 到 **Bun 后端 AI 引擎** 的完整解决方案。它可以帮你免去繁琐的工单填报和日常催收，把冰冷的管理系统变成整个团队的“私人研发助理”。
 
 ---
 
-## 🎯 为什么选择 Delivery Ops Bridge？（核心场景）
+## ✨ 核心特性
 
-### 1. 🤖 终极效率黑科技：群聊即工单
-研发同学**再也不用打开复杂的 TAPD 或 Jira 界面**。
-只需在群聊里轻松 @ 机器人：`@AI交付助理 @张三 安排一个支付接口优化的任务，今天下班前搞定，P1优先级`。
-AI 会自动识别语义、提取意图、拆解任务属性（如主责人、Deadline、优先级、验收标准等），并**瞬间双向同步到 TAPD 中完成建单**。
-
-### 2. 🔄 状态流转，一语带过
-“我接了”、“卡住了因为缺权限”、“做完了求验收” —— 只要你在群内直接引用或回复任务消息，AI 会自动捕捉进度更新。它不仅能追踪任务，还能在你声明“阻塞”时，智能抽取阻塞原因，并@相关人员火速请求协助。
-
-### 3. 📊 告别“催交”：全自动化的站会与智能日报
-系统内置毫秒级守护的调度引擎。
-- **智能站会**：每天上午自动私聊组员温柔“催更”昨今工作，到点后将所有人进度整齐划一地汇总至群内。
-- **AI 研发日报**：每天傍晚，AI 统揽全天群内所有产生过交互的任务、阻塞与进度，自动生成**高度凝练、结构化的智能研发日报**，彻底告别毫无营养的流水账。
-
-### 4. 📈 领导最爱：高颜值迭代数据看板
-基于沉淀的真实交付数据，系统每天下班前会自动渲染一份极具科技感的精美 HTML 交付看板，并**自动上传至飞书云盘**将公网链接发回群中。迭代燃尽、延期预警、全组产能分布，一张图安排得明明白白！
-
-### 5. ⚡️ 极致轻量，开箱即用
-全面拥抱目前最潮的 **TypeScript + Bun + Elysia** 架构。以几乎可忽略不计的内存占用，提供超高并发的 Webhook 响应能力。纯原生轻量级 `JsonStore` 存储架构让你**完全无需部署 MySQL/Redis** 即可光速跑起来！
+- **🤖 群聊即工单**：在飞书群 `@机器人 安排任务`，AI 会自动拆解任务属性并双向同步至 TAPD，开发者全程无需打开工单系统。
+- **🔄 极简状态流转**：群内回复“卡住了/做完了”，AI 会自动捕捉进度、更新状态并 @ 相关人员求助。
+- **📊 自动化站会与日报**：内置智能调度系统，每天定时私聊收集成员进度，傍晚自动生成高浓缩 AI 研发日报发送至群聊。
+- **📈 现代化前端面板**：自带开箱即用的前端管理台，一站式管理系统配置、查看迭代看板、监控审计日志。
+- **⚡️ 极致轻量架构**：告别繁重的数据库部署，采用基于本地 JSON 的纯内存驱动，极低资源占用。
 
 ---
 
 ## 🏗 技术栈
 
-| 类别 | 技术方案 | 描述 |
-| --- | --- | --- |
-| **运行时** | `Bun` | 提供极速的启动体验、原生的 TS 支持及卓越的并发性能 |
-| **框架** | `Elysia` | 最快的 Bun Web 框架，提供强类型的开发体验 |
-| **AI SDK** | `@ai-sdk/openai` | 标准化的 LLM 接入层，支持 OpenAI、DeepSeek 等模型 |
-| **数据层** | `JsonStore` | 轻量级本地数据引擎，免去重数据库依赖的部署烦恼 |
+- **前端 (Frontend)**: React, Vite, Tailwind CSS, Shadcn UI
+- **后端 (Backend)**: Bun, Elysia (TypeScript)
+- **核心组件**: JsonStore (本地数据底座), @ai-sdk/openai (大模型接入)
+- **集成平台**: 飞书开放平台 (Webhook), TAPD 开放 API
+
+---
 
 ## 🚀 快速开始
 
-### 1. 环境准备
+本项目包含独立的 `frontend` (管理后台) 和 `backend` (核心接口与机器人) 两部分。
 
-确保你已在系统中安装了 [Bun](https://bun.sh/) 运行时引擎。
+### 1. 启动后端 (Backend)
 
-### 2. 克隆与安装依赖
+进入 `backend` 目录，使用 Bun 安装依赖并启动服务：
 
 ```bash
-git clone https://github.com/your-org/delivery-ops-bridge.git
-cd delivery-ops-bridge/backend
-
-# 使用 Bun 极速安装依赖
+cd backend
 bun install
+bun dev  # 启动本地热更新开发服务 (默认运行在 8090 端口)
 ```
 
-### 3. 配置环境变量
-
-从示例文件创建你的配置：
-
+后端启动后，请将示例配置文件复制并补充完整（主要填写飞书、TAPD 和大模型秘钥）：
 ```bash
 cp config/config.example.json config/config.json
 ```
 
-你需要填写的关键配置包括：
-- **Feishu**: `app_id`, `app_secret`, `bot_open_id`
-- **TAPD**: `workspace_id`, `api_token`
-- **AI / DeepSeek**: `api_base`, `api_key`
+### 2. 启动前端 (Frontend)
 
-### 4. 启动服务
-
-**日常开发（开启热更新，推荐）：**
+进入 `frontend` 目录，安装依赖并启动可视化管理台：
 
 ```bash
-bun dev
+cd frontend
+pnpm install
+pnpm dev
 ```
-
-**生产环境启动：**
-
-```bash
-bun start
-```
-
-启动成功后，你将看到如下标志性输出：
-```
-🦊 Elysia is running at localhost:8090
-Loaded config for project: ZenithStrat
-```
+打开终端提示的地址（如 `http://localhost:5173`），即可通过可视化 UI 进行全部系统配置。
 
 ---
 
-## 🌐 暴露公网回调 (Webhook)
+## 🌐 飞书 Webhook 联调
 
-要在飞书开放平台接收事件推送，必须将本地的 `8090` 端口暴露至公网。推荐使用 **localtunnel**：
+要接收飞书的即时消息，必须将后端的 `8090` 端口暴露到公网。推荐使用 **localtunnel**：
 
 ```bash
-# 替换你的专属子域名
 npx localtunnel --port 8090 --subdomain peter-ops-bot-666
 ```
 将获取到的 HTTPS 地址填写至 **飞书开放平台 -> 事件订阅 -> 请求网址**。
 
-*(如遇网络受限，也可考虑使用 `cloudflared tunnel` 或 `localhost.run` 替代。)*
-
----
-
-## 🕒 自动化调度器 (Cron Jobs)
-
-系统内部集成了毫秒级的守护任务调度器。只需保证 `bun start` 在后台常驻，系统便会按照 `config.json` 中的 `schedule` 时间表自动执行以下任务：
-
-- `standup-push`: 定点分发站会模板
-- `standup-summary`: 聚合站会并推送到群
-- `overdue-scan`: 识别延期风险任务并预警
-- `dashboard`: 渲染每日迭代进度数据看板
-
----
-
-## 🔐 飞书开放平台权限说明
-
-为确保所有功能正常运作，请为应用开启以下必备权限：
-
-- **基础通信**：`im:message.receive_v1` (接收消息)
-- **文档与云盘（用于自动发布看版）**：
-  - `drive:drive`
-  - `drive:file`
-  - `drive:file:upload`
-  - `docs:permission.setting:write_only`
-
----
-
 ## 📂 核心目录结构
 
 ```text
-├── backend/                  # Bun & TypeScript 后端核心逻辑
-│   ├── src/
-│   │   ├── adapters/         # 外部 API 适配器 (Feishu, TAPD, LLM)
-│   │   ├── core/             # 核心引擎 (Scheduler, Store)
-│   │   ├── services/         # 业务编排 (MessageHandler, Standup, Jobs)
-│   │   └── index.ts          # Elysia 路由与系统启动入口
-│   ├── package.json          # 依赖与脚本
-├── config/                   # 配置文件目录
-├── data/                     # (Git Ignore) 运行时产生的数据和产物
+├── backend/                  # Bun & TypeScript 后端核心逻辑 (Elysia, AI Adapters)
+├── frontend/                 # React & Vite 前端管理后台 (配置可视化, 面板查阅)
+├── config/                   # 系统配置文件目录 (主要维护 config.json)
+├── data/                     # 运行时轻量级存储目录 (代码不追踪)
 └── README.md                 # 项目文档
 ```
-
-<div align="center">
-  <sub>Built with ❤️ by the Delivery Ops Team.</sub>
-</div>
