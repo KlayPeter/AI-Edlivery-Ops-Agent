@@ -1,14 +1,14 @@
 import { HandlerContext, WORKING_REACTION_MIN_SECONDS } from './types';
-import { SourceMessage, utcNowIso } from '../../models/types';
+import { SourceMessage, utcNowIso } from '@/models/types';
 import { ContextResolver } from './ContextResolver';
 import { stripBotMention, resolvePrivateSender, isSystemNoise, findTaskByTitle, parseIsoDatetime } from './utils';
-import { parseTaskCommand, parseDueDateText, hasTaskIntent } from '../taskParser';
+import { parseTaskCommand, parseDueDateText, hasTaskIntent } from '@/services/taskParser';
 import { createTaskFromCommand, saveUpdate } from './taskCommands';
 import { applyAction, saveTaskPlan, updateTaskDue, setTaskStatus, saveProgress, reply } from './statusUpdates';
 import { maybeHandleAiIntent } from './aiActions';
-import { buildDailySummary, renderDailySummary } from '../summaries';
-import { ScheduledJobs } from '../jobs';
-import { looksLikeStandup, parseStandup } from '../standup';
+import { buildDailySummary, renderDailySummary } from '@/services/summaries';
+import { ScheduledJobs } from '@/services/jobs';
+import { looksLikeStandup, parseStandup } from '@/services/standup';
 import dayjs from 'dayjs';
 
 const PRIORITY_TO_TAPD_LABEL_MOCK: Record<string, string> = {

@@ -1,7 +1,7 @@
 import { HandlerContext, PRIORITY_TO_TAPD_LABEL } from './types';
-import { SourceMessage, Task, utcNowIso, BotMessageContext, Mention, TaskUpdate } from '../../models/types';
+import { SourceMessage, Task, utcNowIso, BotMessageContext, Mention, TaskUpdate } from '@/models/types';
 import { sourceTrace } from './utils';
-import { ParsedTaskCommand } from '../taskParser';
+import { ParsedTaskCommand } from '@/services/taskParser';
 
 export async function createTaskFromCommand(
     ctx: HandlerContext,

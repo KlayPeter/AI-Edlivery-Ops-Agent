@@ -1,10 +1,10 @@
-import { AppConfig } from '../core/config';
-import { JsonStore } from '../core/storage';
-import { FeishuAdapter } from '../adapters/feishu';
-import { LLMAdapter } from '../adapters/llm';
+import { AppConfig } from '@/core/config';
+import { JsonStore } from '@/core/storage';
+import { FeishuAdapter } from '@/adapters/feishu';
+import { LLMAdapter } from '@/adapters/llm';
 import { DashboardService } from './dashboard';
 import { buildDailySummary, renderDailySummary } from './summaries';
-import { Task, TaskUpdate, utcNowIso } from '../models/types';
+import { Task, TaskUpdate, utcNowIso } from '@/models/types';
 import dayjs from 'dayjs';
 
 export class ScheduledJobs {

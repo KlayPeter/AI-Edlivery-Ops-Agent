@@ -1,8 +1,8 @@
 import { test, expect, describe } from "bun:test";
-import { LLMAdapter } from "../src/adapters/llm";
-import { TapdAdapter } from "../src/adapters/tapd";
-import { FeishuAdapter, FeishuEventParser } from "../src/adapters/feishu";
-import { AIConfig, TapdConfig, FeishuConfig } from "../src/core/config";
+import { LLMAdapter } from '@/adapters/llm';
+import { TapdAdapter } from '@/adapters/tapd';
+import { FeishuAdapter, FeishuEventParser } from '@/adapters/feishu';
+import { AIConfig, TapdConfig, FeishuConfig } from '@/core/config';
 
 describe("Adapters Loading", () => {
     test("should instantiate adapters successfully", () => {

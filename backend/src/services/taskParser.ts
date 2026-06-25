@@ -1,4 +1,4 @@
-import type { Mention } from '../models/types';
+import type { Mention } from '@/models/types';
 import dayjs from 'dayjs';
 
 export const TASK_INTENT_KEYWORDS = [

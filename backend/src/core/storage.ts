@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { BotMessageContext, DailySummary, DashboardArtifact, SourceMessage, Standup, Task, TaskUpdate } from '../models/types';
+import { BotMessageContext, DailySummary, DashboardArtifact, SourceMessage, Standup, Task, TaskUpdate } from '@/models/types';
 
 export class JsonStore {
     private dataDir: string;

@@ -1,5 +1,5 @@
 import { HandlerContext } from './types';
-import { SourceMessage } from '../../models/types';
+import { SourceMessage } from '@/models/types';
 import { findTaskByTitle } from './utils';
 
 export class ContextResolver {

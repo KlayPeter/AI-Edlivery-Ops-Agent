@@ -2,8 +2,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import axios from 'axios';
-import { FeishuConfig } from '../core/config';
-import { SourceMessage, Mention, utcNowIso } from '../models/types';
+import { FeishuConfig } from '@/core/config';
+import { SourceMessage, Mention, utcNowIso } from '@/models/types';
 
 const execFileAsync = promisify(execFile);
 

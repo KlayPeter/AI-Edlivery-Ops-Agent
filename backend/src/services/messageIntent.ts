@@ -1,5 +1,5 @@
-import { LLMAdapter } from '../adapters/llm';
-import { Member, SourceMessage } from '../models/types';
+import { LLMAdapter } from '@/adapters/llm';
+import { Member, SourceMessage } from '@/models/types';
 import dayjs from 'dayjs';
 
 export const SUPPORTED_INTENTS = new Set(["update_task", "create_task", "add_progress", "change_status", "unknown"]);

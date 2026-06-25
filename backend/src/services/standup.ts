@@ -1,4 +1,4 @@
-import { Standup, utcNowIso } from '../models/types';
+import { Standup, utcNowIso } from '@/models/types';
 import dayjs from 'dayjs';
 
 export const STANDUP_KEYWORDS = ["昨日完成", "昨天完成", "今日计划", "今天计划", "阻塞", "风险", "需要决策"];

@@ -1,9 +1,9 @@
-import type { AppConfig } from '../../core/config';
-import { JsonStore } from '../../core/storage';
-import { FeishuAdapter } from '../../adapters/feishu';
-import { TapdAdapter } from '../../adapters/tapd';
-import { DashboardService } from '../dashboard';
-import { MessageIntentParser } from '../messageIntent';
+import type { AppConfig } from '@/core/config';
+import { JsonStore } from '@/core/storage';
+import { FeishuAdapter } from '@/adapters/feishu';
+import { TapdAdapter } from '@/adapters/tapd';
+import { DashboardService } from '@/services/dashboard';
+import { MessageIntentParser } from '@/services/messageIntent';
 
 export interface HandlerContext {
     config: AppConfig;

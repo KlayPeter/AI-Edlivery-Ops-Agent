@@ -1,11 +1,11 @@
 import { HandlerContext, AI_CONFIDENCE_THRESHOLD, PRIORITY_TO_TAPD_LABEL, TAPD_STATUS_TESTING, TAPD_STATUS_BLOCKED } from './types';
-import { SourceMessage, Task, utcNowIso, Mention } from '../../models/types';
+import { SourceMessage, Task, utcNowIso, Mention } from '@/models/types';
 import { ContextResolver } from './ContextResolver';
-import { MessageIntent, IntentFields } from '../messageIntent';
+import { MessageIntent, IntentFields } from '@/services/messageIntent';
 import { findUniqueTaskByTitle, stripBotMention } from './utils';
 import { reply, applyAction, setTaskStatus, saveProgress } from './statusUpdates';
 import { saveUpdate, notifySourceGroup, createTaskFromCommand } from './taskCommands';
-import { parseTaskCommand, ParsedTaskCommand } from '../taskParser';
+import { parseTaskCommand, ParsedTaskCommand } from '@/services/taskParser';
 import dayjs from 'dayjs';
 
 export async function maybeHandleAiIntent(

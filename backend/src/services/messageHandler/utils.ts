@@ -1,5 +1,5 @@
-import type { SourceMessage, Task, BotMessageContext } from "../../models/types";
-import { utcNowIso } from '../../models/types';
+import type { SourceMessage, Task, BotMessageContext } from '@/models/types';
+import { utcNowIso } from '@/models/types';
 import type { HandlerContext } from './types';
 import dayjs from 'dayjs';
 

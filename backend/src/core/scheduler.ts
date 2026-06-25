@@ -1,9 +1,9 @@
 import { AppConfig } from './config';
 import { JsonStore } from './storage';
-import { MessageHandler } from '../services/messageHandler';
-import { ScheduledJobs } from '../services/jobs';
-import { DashboardService } from '../services/dashboard';
-import { utcNowIso } from '../models/types';
+import { MessageHandler } from '@/services/messageHandler';
+import { ScheduledJobs } from '@/services/jobs';
+import { DashboardService } from '@/services/dashboard';
+import { utcNowIso } from '@/models/types';
 import dayjs from 'dayjs';
 
 const JOB_TO_CONFIG_KEY: Record<string, string> = {

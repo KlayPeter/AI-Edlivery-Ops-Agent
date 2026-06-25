@@ -1,6 +1,6 @@
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
-import { AIConfig } from '../core/config';
+import { AIConfig } from '@/core/config';
 
 export interface LLMResult {
     ok: boolean;

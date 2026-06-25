@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { JsonStore } from '../core/storage';
-import { DashboardArtifact, utcNowIso } from '../models/types';
+import { JsonStore } from '@/core/storage';
+import { DashboardArtifact, utcNowIso } from '@/models/types';
 import dayjs from 'dayjs';
 
 const STATUS_LABELS: Record<string, string> = {

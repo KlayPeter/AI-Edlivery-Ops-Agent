@@ -1,6 +1,6 @@
 import { test, expect, describe } from "bun:test";
-import { parseTaskCommand, parseDueDateText } from "../src/services/taskParser";
-import { Mention } from "../src/models/types";
+import { parseTaskCommand, parseDueDateText } from '@/services/taskParser';
+import { Mention } from '@/models/types';
 
 describe("TaskParser", () => {
     test("should extract due date correctly", () => {

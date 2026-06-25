@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { TapdConfig } from '../core/config';
+import { TapdConfig } from '@/core/config';
 
 export interface TapdResult {
     ok: boolean;

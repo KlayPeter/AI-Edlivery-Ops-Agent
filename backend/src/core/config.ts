@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Member } from '../models/types';
+import { Member } from '@/models/types';
 
 export const DEFAULT_SCHEDULE: Record<string, any> = {
     standup_push: "10:00",

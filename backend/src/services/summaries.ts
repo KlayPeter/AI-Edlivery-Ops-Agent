@@ -1,6 +1,6 @@
-import { JsonStore } from '../core/storage';
-import { LLMAdapter } from '../adapters/llm';
-import { DailySummary, utcNowIso } from '../models/types';
+import { JsonStore } from '@/core/storage';
+import { LLMAdapter } from '@/adapters/llm';
+import { DailySummary, utcNowIso } from '@/models/types';
 import dayjs from 'dayjs';
 
 export const TASK_HINTS = ["任务", "负责", "跟进", "处理", "完成", "联调", "提测", "修复"];
