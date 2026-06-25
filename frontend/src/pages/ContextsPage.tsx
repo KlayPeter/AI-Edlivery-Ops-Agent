@@ -6,7 +6,7 @@ import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-const getTypeColor = (type) => {
+const getTypeColor = (type: string) => {
   switch (type) {
     case 'task_confirmation': return 'volcano';
     case 'standup_prompt': return 'cyan';
@@ -19,7 +19,7 @@ const getTypeColor = (type) => {
   }
 };
 
-const getTypeName = (type) => {
+const getTypeName = (type: string) => {
   switch (type) {
     case 'task_confirmation': return '待确认任务';
     case 'standup_prompt': return '站会提醒';
@@ -38,12 +38,12 @@ const ALL_CONTEXT_TYPES = [
   'missing_task_field', 'task_status_notice'
 ];
 
-const shortId = (value) => {
+const shortId = (value: string | null | undefined) => {
   if (!value) return '-';
   return value.split('_')[1]?.substring(0, 8) || value.substring(0, 8);
 };
 
-const formatDate = (value) => {
+const formatDate = (value: string | number | null | undefined) => {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -51,14 +51,14 @@ const formatDate = (value) => {
 };
 
 const ContextsPage = () => {
-  const [contexts, setContexts] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [contexts, setContexts] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState({ current: 1, pageSize: 15, total: 0 });
-  const [members, setMembers] = useState([]);
-  const [filters, setFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private', targetOpenId: 'all' });
-  const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, contextType: 'all', chatType: 'private', targetOpenId: 'all' });
+  const [members, setMembers] = useState<any[]>([]);
+  const [filters, setFilters] = useState<any>({ startDate: null, endDate: null, contextType: 'all', chatType: 'private', targetOpenId: 'all', groupId: 'all' });
+  const [appliedFilters, setAppliedFilters] = useState<any>({ startDate: null, endDate: null, contextType: 'all', chatType: 'private', targetOpenId: 'all', groupId: 'all' });
 
   
   useEffect(() => {
@@ -69,7 +69,7 @@ const ContextsPage = () => {
     }).catch(console.error);
   }, []);
 
-  const fetchContexts = async (page, pageSize, filtersToApply = {}) => {
+  const fetchContexts = async (page: number, pageSize: number, filtersToApply: any = {}) => {
     setLoading(true);
     try {
       const response = await api.fetchContexts(page, pageSize, filtersToApply);
@@ -80,7 +80,7 @@ const ContextsPage = () => {
         total: response.total || 0,
       });
       setError('');
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || '加载上下文失败');
       message.error('加载上下文失败：' + (err.message || '请求失败'));
     } finally {
@@ -110,7 +110,7 @@ const ContextsPage = () => {
     setPagination(prev => ({ ...prev, current: 1 }));
   };
 
-  const handleTabChange = (key) => {
+  const handleTabChange = (key: string) => {
     const newFilters = { ...filters, chatType: key };
     setFilters(newFilters);
     setAppliedFilters(newFilters);
@@ -123,14 +123,14 @@ const ContextsPage = () => {
       dataIndex: 'created_at',
       key: 'created_at',
       width: 180,
-      render: (text) => <Text type="secondary">{formatDate(text)}</Text>
+      render: (text: string) => <Text type="secondary">{formatDate(text)}</Text>
     },
     {
       title: '上下文类型',
       dataIndex: 'context_type',
       key: 'context_type',
       width: 150,
-      render: (type) => (
+      render: (type: string) => (
         <Tag color={getTypeColor(type)} style={{ fontWeight: 500 }}>
           {getTypeName(type)}
         </Tag>
@@ -140,7 +140,7 @@ const ContextsPage = () => {
       title: '关联任务',
       dataIndex: 'task_title',
       key: 'task_title',
-      render: (text, record) => {
+      render: (text: string, record: any) => {
         if (!text && !record.task_id) {
           return <Text type="secondary" italic>无特定任务 (如: 每日站会提醒)</Text>;
         }
@@ -156,7 +156,7 @@ const ContextsPage = () => {
       title: '目标接收人 / 群',
       key: 'target',
       width: 200,
-      render: (_, record) => {
+      render: (_: any, record: any) => {
         const isGroup = record.is_group;
         
         if (isGroup) {
@@ -184,7 +184,7 @@ const ContextsPage = () => {
       dataIndex: 'message_id',
       key: 'message_id',
       width: 180,
-      render: (text) => (
+      render: (text: string) => (
         <Tooltip title={text}>
           <Text code>{shortId(text)}...</Text>
         </Tooltip>
@@ -202,7 +202,7 @@ const ContextsPage = () => {
       <div style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <RangePicker 
           value={filters.startDate ? [dayjs(filters.startDate), dayjs(filters.endDate)] : null}
-          onChange={(dates) => {
+          onChange={(dates: any) => {
             if (dates) {
               setFilters({...filters, startDate: dates[0].format('YYYY-MM-DD'), endDate: dates[1].format('YYYY-MM-DD')});
             } else {
@@ -227,7 +227,7 @@ const ContextsPage = () => {
             onChange={(val) => setFilters({...filters, targetOpenId: val})}
           >
             <Select.Option value="all">所有人员</Select.Option>
-            {members.map(m => (
+            {members.map((m: any) => (
               <Select.Option key={m.open_id} value={m.open_id}>{m.name}</Select.Option>
             ))}
           </Select>
@@ -240,7 +240,7 @@ const ContextsPage = () => {
           placeholder="筛选群聊"
         >
           <Select.Option value="all">所有群聊</Select.Option>
-          {groups.map(g => <Select.Option key={g.chat_id} value={g.chat_id}>{g.name || g.chat_id}</Select.Option>)}
+          {groups.map((g: any) => <Select.Option key={g.chat_id} value={g.chat_id}>{g.name || g.chat_id}</Select.Option>)}
         </Select>
 
         <Space>

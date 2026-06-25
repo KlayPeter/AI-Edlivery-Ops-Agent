@@ -18,9 +18,9 @@ const ConfigPage = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [originalConfig, setOriginalConfig] = useState(null);
+  const [originalConfig, setOriginalConfig] = useState<any>(null);
   const [loadError, setLoadError] = useState('');
-  const [groups, setGroups] = useState([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
 
   useEffect(() => {
@@ -28,9 +28,9 @@ const ConfigPage = () => {
     
     // Fetch groups
     setGroupsLoading(true);
-    api.fetchGroups().then(data => {
+    api.fetchGroups().then((data: any) => {
       if (!cancelled) setGroups(data);
-    }).catch(err => {
+    }).catch((err: any) => {
       console.error('Failed to fetch groups:', err);
     }).finally(() => {
       if (!cancelled) setGroupsLoading(false);
@@ -52,8 +52,8 @@ const ConfigPage = () => {
         config.runtime.daily_summary_period_end = dayjs('23:59', 'HH:mm');
       }
       if (config.groups && Array.isArray(config.groups)) {
-        config.groups = config.groups.map(group => {
-          const gSchedule = { ...(group.schedule || {}) };
+        config.groups = config.groups.map((group: any) => {
+          const gSchedule: any = { ...(group.schedule || {}) };
           const fallback = config.schedule || {};
           
           JOBS.forEach(job => {
@@ -101,7 +101,7 @@ const ConfigPage = () => {
       setOriginalConfig(config);
       form.setFieldsValue(config);
       setLoading(false);
-    }).catch(err => {
+    }).catch((err: any) => {
       if (cancelled) return;
       setLoadError(err.message || '请求失败');
       message.error('加载配置失败：' + (err.message || '请求失败'));
@@ -112,32 +112,11 @@ const ConfigPage = () => {
     };
   }, [form]);
 
-  
-  const handleTriggerJob = async () => {
-    if (!debugJob || !debugGroup) {
-      message.warning('请选择群聊和要调试的任务');
-      return;
-    }
-    setDebugLoading(true);
-    try {
-      const res = await api.triggerJob(debugJob, debugGroup, false);
-      const data = await res.json();
-      if (res.ok) {
-        message.success(data.message || '触发成功');
-      } else {
-        message.error(data.error || '触发失败');
-      }
-    } catch (e) {
-      message.error(e.message);
-    } finally {
-      setDebugLoading(false);
-    }
-  };
 
   const getDefaultGroupData = () => {
-    const fallback = originalConfig?.schedule || {};
-    const s = {};
-    JOBS.forEach(job => {
+    const fallback: any = originalConfig?.schedule || {};
+    const s: any = {};
+    JOBS.forEach((job: any) => {
       s[`${job.id}_enabled`] = fallback[`${job.id}_enabled`] !== undefined ? fallback[`${job.id}_enabled`] : true;
       let timeVal = fallback[job.id];
       if (!timeVal) {
@@ -154,7 +133,7 @@ const ConfigPage = () => {
     };
   };
 
-  const onFinish = async (values) => {
+  const onFinish = async (values: any) => {
     setSaving(true);
     try {
       const mergedConfig = { ...originalConfig, ...values };
@@ -166,8 +145,8 @@ const ConfigPage = () => {
         delete mergedConfig.runtime.daily_summary_period_end;
       }
       if (mergedConfig.groups && Array.isArray(mergedConfig.groups)) {
-        mergedConfig.groups = mergedConfig.groups.filter(g => g && g.chat_id).map(group => {
-          const gSchedule = { ...(group.schedule || {}) };
+        mergedConfig.groups = mergedConfig.groups.filter((g: any) => g && g.chat_id).map((group: any) => {
+          const gSchedule: any = { ...(group.schedule || {}) };
           JOBS.forEach(job => {
             if (gSchedule[job.id] && dayjs.isDayjs(gSchedule[job.id])) {
               gSchedule[job.id] = gSchedule[job.id].format('HH:mm');
@@ -178,7 +157,7 @@ const ConfigPage = () => {
           if (group.daily_summary_period_start && group.daily_summary_period_end) {
             daily_summary_period = `${group.daily_summary_period_start.format('HH:mm')}-${group.daily_summary_period_end.format('HH:mm')}`;
           }
-          const groupInfo = groups.find(g => g.chat_id === group.chat_id);
+          const groupInfo = groups.find((g: any) => g.chat_id === group.chat_id);
           const name = groupInfo ? groupInfo.name : '未知群组';
           const cleanedGroup = { ...group, name, schedule: gSchedule, daily_summary_period };
           delete cleanedGroup.daily_summary_period_start;
@@ -190,7 +169,7 @@ const ConfigPage = () => {
       await api.saveConfig(mergedConfig);
       message.success('配置保存成功');
       setOriginalConfig(mergedConfig);
-    } catch (err) {
+    } catch (err: any) {
       message.error('保存配置失败：' + err.message);
     } finally {
       setSaving(false);
@@ -326,7 +305,7 @@ const ConfigPage = () => {
                   const data = await api.fetchGroups();
                   setGroups(data);
                   message.success('已刷新飞书群聊列表');
-                } catch(e) {
+                } catch(e: any) {
                   message.error('刷新群聊列表失败: ' + e.message);
                 } finally {
                   setGroupsLoading(false);
@@ -362,19 +341,19 @@ const ConfigPage = () => {
                                   (option?.value ?? '').toLowerCase().includes(input.toLowerCase())
                                 }
                                 options={(() => {
-                                  const selectedChats = form.getFieldValue('groups')?.map(g => g?.chat_id).filter(Boolean) || [];
+                                  const selectedChats = form.getFieldValue('groups')?.map((g: any) => g?.chat_id).filter(Boolean) || [];
                                   const currentChatId = form.getFieldValue(['groups', groupName, 'chat_id']);
                                   
                                   const combinedGroups = [...groups];
                                   if (originalConfig && originalConfig.groups) {
-                                    originalConfig.groups.forEach(og => {
-                                      if (og.chat_id && !combinedGroups.find(g => g.chat_id === og.chat_id)) {
+                                    originalConfig.groups.forEach((og: any) => {
+                                      if (og.chat_id && !combinedGroups.find((g: any) => g.chat_id === og.chat_id)) {
                                         combinedGroups.push({ chat_id: og.chat_id, name: og.name || og.chat_id });
                                       }
                                     });
                                   }
 
-                                  return combinedGroups.map(g => ({ 
+                                  return combinedGroups.map((g: any) => ({ 
                                     label: g.name, 
                                     value: g.chat_id,
                                     disabled: selectedChats.includes(g.chat_id) && g.chat_id !== currentChatId
@@ -389,12 +368,12 @@ const ConfigPage = () => {
                                       const newGroups = [...currentGroups];
                                       newGroups[groupName] = {
                                         ...newGroups[groupName],
-                                        members: members.map(m => ({ name: m.name, open_id: m.open_id, is_active: true }))
+                                        members: members.map((m: any) => ({ name: m.name, open_id: m.open_id, is_active: true }))
                                       };
                                       form.setFieldsValue({ groups: newGroups });
                                       hide();
                                       message.success('群成员已自动获取并填入！');
-                                    } catch (e) {
+                                    } catch (e: any) {
                                       hide();
                                       message.error('获取群成员失败：' + e.message);
                                     }
@@ -435,17 +414,17 @@ const ConfigPage = () => {
                               if (!currentChatId) { message.warning('请先选择群聊'); return; }
                               const hide = message.loading('重新获取群成员中...', 0);
                               try {
-                                const members = await api.fetchGroupMembers(currentChatId);
+                                const members: any[] = await api.fetchGroupMembers(currentChatId);
                                 const currentGroups = form.getFieldValue('groups') || [];
                                 const newGroups = [...currentGroups];
                                 newGroups[groupName] = {
                                   ...newGroups[groupName],
-                                  members: members.map(m => ({ name: m.name, open_id: m.open_id, is_active: true }))
+                                  members: members.map((m: any) => ({ name: m.name, open_id: m.open_id, is_active: true }))
                                 };
                                 form.setFieldsValue({ groups: newGroups });
                                 hide();
                                 message.success('群成员已重新获取！');
-                              } catch (e) {
+                              } catch (e: any) {
                                 hide();
                                 message.error('获取群成员失败：' + e.message);
                               }

@@ -8,13 +8,13 @@ const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 const LogsPage = () => {
-  const [logs, setLogs] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
-  const [filters, setFilters] = useState({ startDate: null, endDate: null, eventType: 'all', groupId: 'all' });
-  const [appliedFilters, setAppliedFilters] = useState({ startDate: null, endDate: null, eventType: 'all', groupId: 'all' });
+  const [filters, setFilters] = useState<any>({ startDate: null, endDate: null, eventType: 'all', groupId: 'all' });
+  const [appliedFilters, setAppliedFilters] = useState<any>({ startDate: null, endDate: null, eventType: 'all', groupId: 'all' });
 
   
   useEffect(() => {
@@ -25,7 +25,7 @@ const LogsPage = () => {
     }).catch(console.error);
   }, []);
 
-  const fetchLogs = async (page, pageSize, filtersToApply = {}) => {
+  const fetchLogs = async (page: number, pageSize: number, filtersToApply: any = {}) => {
     setLoading(true);
     try {
       const response = await api.fetchLogs(page, pageSize, filtersToApply);
@@ -36,7 +36,7 @@ const LogsPage = () => {
         total: response.total || 0,
       });
       setError('');
-    } catch (e) {
+    } catch (e: any) {
       setError(e.message || '加载日志失败');
     } finally {
       setLoading(false);
@@ -65,17 +65,17 @@ const LogsPage = () => {
       dataIndex: 'timestamp',
       key: 'timestamp',
       width: 200,
-      render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
+      render: (text: string) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
     },
     {
       title: '所属群组',
       key: 'group_id',
       width: 150,
-      render: (_, record) => {
+      render: (_: any, record: any) => {
         const payload = record.details || record.payload || record;
         const gid = payload.group_id || payload.source_group_id || payload.chat_id;
         if (!gid) return <Text type="secondary">-</Text>;
-        const group = groups.find(g => g.chat_id === gid);
+        const group = groups.find((g: any) => g.chat_id === gid);
         return <Tag color="blue">{group ? group.name || gid : gid}</Tag>;
       }
     },
@@ -83,7 +83,7 @@ const LogsPage = () => {
       title: '事件类型',
       key: 'event_type',
       width: 150,
-      render: (_, record) => {
+      render: (_: any, record: any) => {
         const rawType = record.action || record.event_type;
         const mapping = getEventMapping(rawType);
         return <Tag color={mapping.color}>{mapping.text}</Tag>;
@@ -92,7 +92,7 @@ const LogsPage = () => {
     {
       title: '摘要信息',
       key: 'summary',
-      render: (_, record) => {
+      render: (_: any, record: any) => {
         const payload = record.details || record.payload || record;
         let summary = '';
         if (payload.text) summary = payload.text;
@@ -115,7 +115,7 @@ const LogsPage = () => {
       <div style={{ marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center' }}>
         <RangePicker 
           value={filters.startDate ? [dayjs(filters.startDate), dayjs(filters.endDate)] : null}
-          onChange={(dates) => {
+          onChange={(dates: any) => {
             if (dates) {
               setFilters({...filters, startDate: dates[0].format('YYYY-MM-DD'), endDate: dates[1].format('YYYY-MM-DD')});
             } else {
@@ -142,7 +142,7 @@ const LogsPage = () => {
           placeholder="筛选群聊"
         >
           <Select.Option value="all">所有群聊</Select.Option>
-          {groups.map(g => <Select.Option key={g.chat_id} value={g.chat_id}>{g.name || g.chat_id}</Select.Option>)}
+          {groups.map((g: any) => <Select.Option key={g.chat_id} value={g.chat_id}>{g.name || g.chat_id}</Select.Option>)}
         </Select>
 
         <Space>

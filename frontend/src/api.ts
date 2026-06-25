@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = (import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:8090/api`).replace(/\/$/, "");
+const API_BASE = ((import.meta as any).env?.VITE_API_BASE || `http://${window.location.hostname}:8090/api`).replace(/\/$/, "");
 
 const client = axios.create({
   baseURL: API_BASE,
@@ -10,7 +10,12 @@ const client = axios.create({
   },
 });
 
-const normalizeError = (error) => {
+interface ApiError extends Error {
+  status?: number;
+  payload?: any;
+}
+
+const normalizeError = (error: any): ApiError => {
   const payload = error.response?.data;
   const serverMessage = payload?.message || payload?.error;
   const message =
@@ -18,13 +23,13 @@ const normalizeError = (error) => {
     (error.code === "ECONNABORTED" ? "请求超时，请确认后端服务是否正常" : error.message) ||
     "请求失败";
 
-  const normalized = new Error(message);
+  const normalized = new Error(message) as ApiError;
   normalized.status = error.response?.status;
   normalized.payload = payload;
   return normalized;
 };
 
-const request = async (promise) => {
+const request = async (promise: Promise<any>) => {
   try {
     const response = await promise;
     return response.data;
@@ -33,17 +38,17 @@ const request = async (promise) => {
   }
 };
 
-const safeArray = (value) => (Array.isArray(value) ? value : []);
+const safeArray = (value: any) => (Array.isArray(value) ? value : []);
 
 export const api = {
   fetchConfig: () => request(client.get("/config")),
-  saveConfig: (data) => request(client.post("/config", data)),
+  saveConfig: (data: any) => request(client.post("/config", data)),
   fetchDashboards: async () => {
     const data = await request(client.get("/dashboards"));
     return safeArray(data.dashboards);
   },
-  getDashboardUrl: (filename) => `${API_BASE}/dashboards/${encodeURIComponent(filename)}`,
-  fetchLogs: async (page = 1, pageSize = 20, filters = {}) => {
+  getDashboardUrl: (filename: string) => `${API_BASE}/dashboards/${encodeURIComponent(filename)}`,
+  fetchLogs: async (page = 1, pageSize = 20, filters: any = {}) => {
     let url = `/logs?page=${page}&pageSize=${pageSize}`;
     if (filters.startDate) url += `&startDate=${filters.startDate}`;
     if (filters.endDate) url += `&endDate=${filters.endDate}`;
@@ -52,7 +57,7 @@ export const api = {
     const data = await request(client.get(url));
     return data;
   },
-  fetchContexts: async (page = 1, pageSize = 15, filters = {}) => {
+  fetchContexts: async (page = 1, pageSize = 15, filters: any = {}) => {
     let url = `/contexts?page=${page}&pageSize=${pageSize}`;
     if (filters.startDate) url += `&startDate=${filters.startDate}`;
     if (filters.endDate) url += `&endDate=${filters.endDate}`;
@@ -67,10 +72,10 @@ export const api = {
     const data = await request(client.get("/feishu/groups"));
     return safeArray(data.groups);
   },
-  fetchGroupMembers: async (chatId) => {
+  fetchGroupMembers: async (chatId: string) => {
     const data = await request(client.get(`/feishu/groups/${chatId}/members`));
     return safeArray(data.members);
   },
-  fetchStandups: (date, groupId) => request(client.get(`/standups?date=${date}${groupId ? '&groupId=' + encodeURIComponent(groupId) : ''}`)),
-  triggerJob: (jobName, groupId, dryRun = true) => request(client.post(`/jobs/${encodeURIComponent(jobName)}`, { groupId, dryRun })),
+  fetchStandups: (date: string, groupId: string) => request(client.get(`/standups?date=${date}${groupId ? '&groupId=' + encodeURIComponent(groupId) : ''}`)),
+  triggerJob: (jobName: string, groupId: string, dryRun = true) => request(client.post(`/jobs/${encodeURIComponent(jobName)}`, { groupId, dryRun })),
 };

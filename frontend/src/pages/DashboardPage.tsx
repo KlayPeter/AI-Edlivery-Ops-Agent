@@ -6,11 +6,11 @@ import { api } from '../api';
 const { Content } = Layout;
 
 const DashboardPage = () => {
-  const [dashboards, setDashboards] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [dashboards, setDashboards] = useState<string[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroup, setSelectedGroup] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(dayjs().format('YYYY-MM'));
-  const [selectedDashboard, setSelectedDashboard] = useState(null);
+  const [selectedDashboard, setSelectedDashboard] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -33,7 +33,7 @@ const DashboardPage = () => {
           setSelectedDashboard(dashboardsData[0]);
         }
 
-      } catch (e) {
+      } catch (e: any) {
         if (!cancelled) {
           setError(e.message || '加载看板失败');
         }
@@ -76,7 +76,7 @@ const DashboardPage = () => {
               placeholder="请选择群聊"
               options={[
                 { label: '全部', value: 'all' },
-                ...groups.map(g => ({ label: g.name || g.chat_id, value: g.chat_id }))
+                ...groups.map((g: any) => ({ label: g.name || g.chat_id, value: g.chat_id }))
               ]}
             />
           </div>
@@ -94,26 +94,26 @@ const DashboardPage = () => {
         </div>
         <Menu
           mode="inline"
-          selectedKeys={[selectedDashboard]}
+          selectedKeys={selectedDashboard ? [selectedDashboard] : []}
           onClick={(e) => {
             setSelectedDashboard(e.key);
             setDrawerVisible(false);
           }}
           items={dashboards
-            .filter(d => {
+            .filter((d: string) => {
               const groupMatch = selectedGroup === 'all' || d.includes(selectedGroup);
               const dateMatch = d.match(/(\d{4}-\d{2}-\d{2})\.html$/);
               const monthMatch = selectedMonth ? (dateMatch && dateMatch[1].startsWith(selectedMonth)) : true;
               return groupMatch && monthMatch;
             })
-            .map(d => {
+            .map((d: string) => {
               const match = d.match(/(\d{4}-\d{2}-\d{2})\.html$/);
               const label = match ? match[1] : d;
               return { key: d, label: label };
             })}
           style={{ borderRight: 0 }}
         />
-        {dashboards.filter(d => {
+        {dashboards.filter((d: string) => {
               const groupMatch = selectedGroup === 'all' || d.includes(selectedGroup);
               const dateMatch = d.match(/(\d{4}-\d{2}-\d{2})\.html$/);
               const monthMatch = selectedMonth ? (dateMatch && dateMatch[1].startsWith(selectedMonth)) : true;

@@ -8,22 +8,22 @@ const { Title, Text } = Typography;
 
 export default function StandupsPage() {
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(dayjs());
+  const [data, setData] = useState<any>(null);
+  const [selectedDate, setSelectedDate] = useState<any>(dayjs());
   const [filterStatus, setFilterStatus] = useState('all');
   const [modalVisible, setModalVisible] = useState(false);
-  const [selectedStandup, setSelectedStandup] = useState(null);
+  const [selectedStandup, setSelectedStandup] = useState<any>(null);
   
-  const [groups, setGroups] = useState([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroup, setSelectedGroup] = useState('');
 
-  const fetchStandups = async (dateStr, groupId) => {
+  const fetchStandups = async (dateStr: string, groupId: string) => {
     if (!groupId) return; // Wait for group to be selected
     setLoading(true);
     try {
       const json = await api.fetchStandups(dateStr, groupId);
       setData(json);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       message.error(err.message || "获取站会数据失败");
     } finally {
@@ -64,7 +64,7 @@ export default function StandupsPage() {
     {
       title: '提交状态',
       key: 'submitted',
-      render: (_, record) => (
+      render: (_: any, record: any) => (
         <Tag color={record.submitted ? 'success' : 'error'}>
           {record.submitted ? '已提交' : '未提交'}
         </Tag>
@@ -73,7 +73,7 @@ export default function StandupsPage() {
     {
       title: '提交时间',
       key: 'time',
-      render: (_, record) => {
+      render: (_: any, record: any) => {
         if (!record.submitted || !record.standup_content) return '-';
         const dateStr = record.standup_content.submitted_at;
         return dateStr ? new Date(dateStr).toLocaleTimeString() : '-';
@@ -82,7 +82,7 @@ export default function StandupsPage() {
     {
       title: '操作',
       key: 'action',
-      render: (_, record) => (
+      render: (_: any, record: any) => (
         record.submitted ? (
           <Button 
             type="link" 
@@ -109,7 +109,7 @@ export default function StandupsPage() {
             onChange={setSelectedGroup} 
             style={{ width: 180 }}
             placeholder="请选择所属群组"
-            options={groups.map(g => ({ label: g.name || g.chat_id, value: g.chat_id }))}
+            options={groups.map((g: any) => ({ label: g.name || g.chat_id, value: g.chat_id }))}
           />
           <Select value={filterStatus} onChange={setFilterStatus} style={{ width: 120 }}>
             <Select.Option value="all">全部状态</Select.Option>
@@ -118,7 +118,7 @@ export default function StandupsPage() {
           </Select>
           <DatePicker 
             value={selectedDate} 
-            onChange={(val) => val && setSelectedDate(val)} 
+            onChange={(val: any) => val && setSelectedDate(val)}
             allowClear={false}
           />
         </Space>
@@ -149,7 +149,7 @@ export default function StandupsPage() {
             </Row>
 
             <Table 
-              dataSource={data.members.filter(m => 
+              dataSource={data.members.filter((m: any) => 
                 filterStatus === 'all' ? true : 
                 filterStatus === 'submitted' ? m.submitted : !m.submitted
               )} 
@@ -192,7 +192,7 @@ export default function StandupsPage() {
   );
 }
 
-const StandupSection = ({ icon, title, items }) => (
+const StandupSection = ({ icon, title, items }: any) => (
   <div style={{ background: '#fafafa', borderRadius: 8, padding: '16px', border: '1px solid #f0f0f0' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
       <span style={{ fontSize: 16 }}>{icon}</span>
@@ -200,7 +200,7 @@ const StandupSection = ({ icon, title, items }) => (
     </div>
     {items?.length > 0 ? (
       <ul style={{ margin: 0, paddingLeft: 24, color: '#595959', lineHeight: 1.6 }}>
-        {items.map((item, i) => <li key={i}>{item}</li>)}
+        {items.map((item: any, i: number) => <li key={i}>{item}</li>)}
       </ul>
     ) : (
       <Text type="secondary" style={{ paddingLeft: 24 }}>无</Text>

@@ -1,4 +1,4 @@
-export const EVENT_TYPE_MAP = {
+export const EVENT_TYPE_MAP: Record<string, { text: string; color: string }> = {
   ai_daily_summary_failed: { text: 'AI日报失败', color: 'red' },
   ai_intent_failed: { text: 'AI意图失败', color: 'red' },
   ai_intent_parsed: { text: 'AI意图解析', color: 'geekblue' },
@@ -27,7 +27,7 @@ export const EVENT_TYPE_MAP = {
   unknown_user: { text: '未知用户', color: 'volcano' },
 };
 
-export const getEventMapping = (eventType) => {
+export const getEventMapping = (eventType: string) => {
   if (!eventType) return { text: 'System', color: 'default' };
   return EVENT_TYPE_MAP[eventType] || { text: eventType, color: 'default' };
 };

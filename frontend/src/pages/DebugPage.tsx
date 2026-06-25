@@ -15,8 +15,8 @@ const JOBS = [
 ];
 
 const DebugPage = () => {
-  const [runningJob, setRunningJob] = useState(null);
-  const [groups, setGroups] = useState([]);
+  const [runningJob, setRunningJob] = useState<string | null>(null);
+  const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroup, setSelectedGroup] = useState('');
 
   useEffect(() => {
@@ -35,7 +35,7 @@ const DebugPage = () => {
     fetchConfig();
   }, []);
 
-  const handleRun = async (jobId) => {
+  const handleRun = async (jobId: string) => {
     if (!selectedGroup) {
       message.warning('请先选择目标群聊');
       return;
@@ -48,7 +48,7 @@ const DebugPage = () => {
       } else {
         message.warning(`任务可能未正常启动：${JSON.stringify(res)}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       message.error(`执行失败: ${err.message}`);
     } finally {
       setRunningJob(null);
@@ -66,7 +66,7 @@ const DebugPage = () => {
             onChange={setSelectedGroup} 
             style={{ width: 180 }}
             placeholder="请选择群聊"
-            options={groups.map(g => ({ label: g.name || g.chat_id, value: g.chat_id }))}
+            options={groups.map((g: any) => ({ label: g.name || g.chat_id, value: g.chat_id }))}
           />
         </Space>
       </div>
