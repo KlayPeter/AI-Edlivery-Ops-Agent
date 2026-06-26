@@ -18,7 +18,14 @@ import * as crypto from 'crypto';
 
 let config = loadConfig();
 let store = new JsonStore(config.data_path);
-let feishu = new FeishuAdapter(config.feishu);
+
+const knownNames: Record<string, string> = {};
+for (const g of config.groups) {
+    for (const m of g.members) {
+        knownNames[m.open_id] = m.name;
+    }
+}
+let feishu = new FeishuAdapter(config.feishu, false, knownNames);
 feishu.setAuditCallback((action, payload) => store.appendAuditLog(action, payload));
 let tapd = new TapdAdapter(config.tapd);
 let llm = new LLMAdapter(config.ai);

@@ -100,7 +100,7 @@ export class JsonStore {
 
     findTask(identifier: string): any {
         const cleaned = identifier.trim();
-        for (const task of this.listTasks()) {
+        for (const task of this.listTasks(true)) {
             if (task.id === cleaned || task.tapd_story_id === cleaned) {
                 return task;
             }
@@ -108,8 +108,9 @@ export class JsonStore {
         return null;
     }
 
-    listTasks(): any[] {
-        return this._listJson("tasks");
+    listTasks(includeDeleted: boolean = false): any[] {
+        const tasks = this._listJson("tasks");
+        return includeDeleted ? tasks : tasks.filter(t => t.status !== "deleted");
     }
 
     saveTaskUpdate(update: TaskUpdate): void {

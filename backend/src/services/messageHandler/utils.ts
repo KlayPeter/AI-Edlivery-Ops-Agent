@@ -61,22 +61,30 @@ export function resolvePrivateSender(message: SourceMessage, ctx: HandlerContext
 }
 
 export function findTaskByTitle(title: string, ctx: HandlerContext): any {
-    for (const task of ctx.store.listTasks()) {
+    let deletedMatch = null;
+    for (const task of ctx.store.listTasks(true)) {
         const taskTitle = task.title || "";
-        if (taskTitle.includes(title) || title.includes(taskTitle)) return task;
+        if (taskTitle.includes(title) || title.includes(taskTitle)) {
+            if (task.status === "deleted") deletedMatch = task;
+            else return task;
+        }
     }
-    return undefined;
+    return deletedMatch;
 }
 
 export function findUniqueTaskByTitle(title: string, ctx: HandlerContext): any {
     const candidates = [];
-    for (const task of ctx.store.listTasks()) {
+    let deletedMatch = null;
+    for (const task of ctx.store.listTasks(true)) {
         const taskTitle = task.title || "";
         if (title === taskTitle || title.includes(taskTitle) || taskTitle.includes(title)) {
-            candidates.push(task);
+            if (task.status === "deleted") deletedMatch = task;
+            else candidates.push(task);
         }
     }
-    return candidates.length === 1 ? candidates[0] : undefined;
+    if (candidates.length === 1) return candidates[0];
+    if (candidates.length === 0 && deletedMatch) return deletedMatch;
+    return undefined;
 }
 
 export function parseIsoDatetime(value: string): dayjs.Dayjs | null {

@@ -9,6 +9,7 @@ export const TASK_STATUS_OWNER_MARKED_DONE = "owner_marked_done";
 export const TASK_STATUS_ACCEPTED = "accepted";
 export const TASK_STATUS_CANCELLED = "cancelled";
 export const TASK_STATUS_OVERDUE = "overdue";
+export const TASK_STATUS_DELETED = "deleted";
 
 export interface Member {
   open_id: string;
@@ -20,6 +21,7 @@ export interface Member {
 export interface Mention {
   open_id: string;
   name: string;
+  key?: string;
 }
 
 export interface SourceMessage {

@@ -270,27 +270,28 @@ export class ScheduledJobs {
             if (!dueDate.isValid()) continue;
             
             const daysToDue = dueDate.diff(now, 'day');
+            const link = rawTask.tapd_url ? ` <a href="${rawTask.tapd_url}">查看</a>` : "";
             
             if (daysToDue === 1) {
-                if (await this.sendDueReminderOnce(rawTask, day, "due_tomorrow", `这个任务明天截止，请确认当前进展和风险。\n任务：${rawTask.title}\n截止时间：${due}`)) {
+                if (await this.sendDueReminderOnce(rawTask, day, "due_tomorrow", `这个任务明天截止，请确认当前进展和风险。\n任务：${rawTask.title}${link}\n截止时间：${due}`)) {
                     counts.due_tomorrow++;
                 }
             } else if (daysToDue === 0) {
-                if (await this.sendDueReminderOnce(rawTask, day, "due_today", `这个任务今天截止，请同步当前进展。\n任务：${rawTask.title}\n截止时间：${due}`)) {
+                if (await this.sendDueReminderOnce(rawTask, day, "due_today", `这个任务今天截止，请同步当前进展。\n任务：${rawTask.title}${link}\n截止时间：${due}`)) {
                     counts.due_today++;
                 }
             } else if (daysToDue === -1) {
                 const changed = this.markOverdueIfNeeded(rawTask, "overdue_day1");
-                if (await this.sendDueReminderOnce(rawTask, day, "overdue_day1", `这个任务已超期 1 天，是否需要更新一下当前进展？\n任务：${rawTask.title}\n原截止时间：${due}`)) {
+                if (await this.sendDueReminderOnce(rawTask, day, "overdue_day1", `这个任务已超期 1 天，是否需要更新一下当前进展？\n任务：${rawTask.title}${link}\n原截止时间：${due}`)) {
                     counts.overdue_day1++;
                 }
                 if (changed) rawTask.status = "overdue";
             } else if (daysToDue <= -2) {
                 this.markOverdueIfNeeded(rawTask, "overdue_risk");
-                if (await this.sendDueReminderOnce(rawTask, day, "overdue_risk", `这个任务已超期超过 2 天，已进入日报和看板风险，请尽快更新进展。\n任务：${rawTask.title}\n原截止时间：${due}`)) {
+                if (await this.sendDueReminderOnce(rawTask, day, "overdue_risk", `这个任务已超期超过 2 天，已进入日报和看板风险，请尽快更新进展。\n任务：${rawTask.title}${link}\n原截止时间：${due}`)) {
                     counts.overdue_risk++;
                     const ownerText = this.config.runtime.public_overdue_owners ? `，负责人：${rawTask.primary_owner_name}` : "";
-                    riskItems[taskGroupId].push(`${riskItems[taskGroupId].length + 1}. ${rawTask.title}，原定 ${due} 完成${ownerText}，当前仍未完成。`);
+                    riskItems[taskGroupId].push(`${riskItems[taskGroupId].length + 1}. ${rawTask.title}${link}，原定 ${due} 完成${ownerText}，当前仍未完成。`);
                 }
             }
         }

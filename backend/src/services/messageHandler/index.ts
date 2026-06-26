@@ -120,16 +120,17 @@ export class MessageHandler {
 
         const command = parseTaskCommand(message.text || "", message.mentions || [], this.ctx.config.feishu.bot_open_id, undefined, false);
         if (!command.should_create) {
+            const aiResult = await maybeHandleAiIntent(this.ctx, this.resolver, message, "group", replyContext);
+            if (aiResult) return aiResult;
+            
             if (hasTaskIntent(message.text || "")) {
                 const fieldResult = await this.maybeReplyMissingTaskField(message, "group", command.reason);
                 if (fieldResult) return fieldResult;
             }
-            const aiResult = await maybeHandleAiIntent(this.ctx, this.resolver, message, "group", replyContext);
-            if (aiResult) return aiResult;
             
             const isExplicit = (message.mentions || []).some(m => m.open_id === this.ctx.config.feishu.bot_open_id) || !!replyContext;
             if (isExplicit) {
-                await reply(this.ctx, message, "group", "抱歉，我没有识别到有效的指令。\n目前支持的操作有：\n- 创建/安排任务\n- 对我回复接受、打回、完成某任务\n- 回复具体进度");
+                await reply(this.ctx, message, "group", "抱歉，我没有识别到有效的指令。\n目前支持的操作有：\n- 创建/安排/子任务\n- 对我回复接受、打回、完成某任务\n- 回复具体进度\n- 生成/发送今日群聊日报");
                 return { handled: true, action: "unrecognized_command", reason: command.reason };
             }
             message.ai_result = { type: "ignored_group_chat" };
@@ -210,18 +211,20 @@ export class MessageHandler {
             const result = await createTaskFromCommand(this.ctx, message, command, parentId);
             this.ctx.store.setIdempotencyKey(key, result);
             return result;
-        } else if (hasTaskIntent(message.text || "")) {
-            const fieldResult = await this.maybeReplyMissingTaskField(message, "private", command.reason);
-            if (fieldResult) return fieldResult;
+        } else {
+            const aiResult = await maybeHandleAiIntent(this.ctx, this.resolver, message, "private", replyContext);
+            if (aiResult) return aiResult;
+            
+            if (hasTaskIntent(message.text || "")) {
+                const fieldResult = await this.maybeReplyMissingTaskField(message, "private", command.reason);
+                if (fieldResult) return fieldResult;
+            }
         }
 
         const statusResult = await this.maybeHandleStatusUpdate(message, "private", replyContext);
         if (statusResult) return statusResult;
         
-        const aiResult = await maybeHandleAiIntent(this.ctx, this.resolver, message, "private", replyContext);
-        if (aiResult) return aiResult;
-        
-        await reply(this.ctx, message, "private", "抱歉，我没有识别到有效的指令。\n你可以对我说：创建任务、安排一下，或者向我发送今日站会报告。");
+        await reply(this.ctx, message, "private", "抱歉，我没有识别到有效的指令。\n目前支持的操作有：\n- 创建任务、安排一下\n- 向我发送今日站会报告\n- 对我回复接受、打回、完成某任务\n- 更新任务具体进度\n- 生成/发送今日群聊日报");
         return { handled: true, action: "unrecognized_command", reason: "no_private_command" };
     }
 
@@ -404,24 +407,48 @@ export class MessageHandler {
                 await reply(this.ctx, message, source, "请引用对应任务消息回复，或直接带上任务ID。");
                 return { handled: true, action: "task_not_found" };
             }
+            if (taskData.status === "deleted") {
+                const link = taskData.tapd_url ? ` <a href="${taskData.tapd_url}">查看</a>` : "";
+                await reply(this.ctx, message, source, `任务「${taskData.title}」${link} 已经被删除。`);
+                return { handled: true, action: "task_deleted" };
+            }
             return await applyAction(this.ctx, message, source, taskData, action, text);
         }
 
         const contextualTask = this.resolver.contextualTask(message, replyContext, text);
         if (contextualTask && replyContext && replyContext.context_type === "task_plan_request") {
+            if (contextualTask.status === "deleted") {
+                const link = contextualTask.tapd_url ? ` <a href="${contextualTask.tapd_url}">查看</a>` : "";
+                await reply(this.ctx, message, source, `任务「${contextualTask.title}」${link} 已经被删除。`);
+                return { handled: true, action: "task_deleted" };
+            }
             return await saveTaskPlan(this.ctx, message, source, contextualTask, text);
         }
 
         const dueRegex = /(?:截止时间|截止|完成时间)\s*(?:设置为|改为|调整为|设为|改到|到|[:：])/;
         const dueDate = (dueRegex.test(text) || (contextualTask && /(?:截止时间|截止|完成时间)\s*(?:设置为|改为|调整为|设为|改到|到|[:：])/.test(text))) ? parseDueDateText(text) : null;
-        if (dueDate && contextualTask) return await updateTaskDue(this.ctx, message, source, contextualTask, dueDate, text);
+        if (dueDate && contextualTask) {
+            if (contextualTask.status === "deleted") {
+                const link = contextualTask.tapd_url ? ` <a href="${contextualTask.tapd_url}">查看</a>` : "";
+                await reply(this.ctx, message, source, `任务「${contextualTask.title}」${link} 已经被删除。`);
+                return { handled: true, action: "task_deleted" };
+            }
+            return await updateTaskDue(this.ctx, message, source, contextualTask, dueDate, text);
+        }
         if (dueDate && !contextualTask) {
             await reply(this.ctx, message, source, "请引用对应任务消息回复，或直接带上任务ID。");
             return { handled: true, action: "task_context_required" };
         }
 
         const contextAction = /^\s*(接受|拒绝|需要澄清|验收通过|打回)(?:[:：].+)?\s*$/.exec(text);
-        if (contextAction && contextualTask) return await applyAction(this.ctx, message, source, contextualTask, contextAction[1], text);
+        if (contextAction && contextualTask) {
+            if (contextualTask.status === "deleted") {
+                const link = contextualTask.tapd_url ? ` <a href="${contextualTask.tapd_url}">查看</a>` : "";
+                await reply(this.ctx, message, source, `任务「${contextualTask.title}」${link} 已经被删除。`);
+                return { handled: true, action: "task_deleted" };
+            }
+            return await applyAction(this.ctx, message, source, contextualTask, contextAction[1], text);
+        }
         if (contextAction && !contextualTask) {
             await reply(this.ctx, message, source, "请引用对应任务消息回复，或直接带上任务ID。");
             return { handled: true, action: "task_context_required" };
@@ -435,6 +462,11 @@ export class MessageHandler {
                 await reply(this.ctx, message, source, "请引用对应任务消息回复，或直接带上任务ID。");
                 return { handled: true, action: "task_not_found" };
             }
+            if (taskData.status === "deleted") {
+                const link = taskData.tapd_url ? ` <a href="${taskData.tapd_url}">查看</a>` : "";
+                await reply(this.ctx, message, source, `任务「${taskData.title}」${link} 已经被删除。`);
+                return { handled: true, action: "task_deleted" };
+            }
             const statusWord = progressMatch[2];
             if (statusWord.includes("阻塞")) return await setTaskStatus(this.ctx, message, source, taskData, "blocked", "blocked", text, "workflow_suspended");
             if (statusWord.includes("完成")) return await setTaskStatus(this.ctx, message, source, taskData, "owner_marked_done", "owner_marked_done", text, "status_3");
@@ -447,6 +479,11 @@ export class MessageHandler {
             if (title && !["任务", "这个任务", "该任务"].includes(title)) {
                 const taskData = findTaskByTitle(title, this.ctx);
                 if (taskData) {
+                    if (taskData.status === "deleted") {
+                        const link = taskData.tapd_url ? ` <a href="${taskData.tapd_url}">查看</a>` : "";
+                        await reply(this.ctx, message, source, `任务「${taskData.title}」${link} 已经被删除。`);
+                        return { handled: true, action: "task_deleted" };
+                    }
                     const statusWord = directMatch[2];
                     if (statusWord.includes("阻塞")) return await setTaskStatus(this.ctx, message, source, taskData, "blocked", "blocked", text, "workflow_suspended");
                     if (statusWord.includes("完成")) return await setTaskStatus(this.ctx, message, source, taskData, "owner_marked_done", "owner_marked_done", text, "status_3");
@@ -456,13 +493,23 @@ export class MessageHandler {
         }
 
         if (contextualTask) {
-            if (/(已完成|完成了)/.test(text) && !/(没|不|未)完成/.test(text)) {
-                return await setTaskStatus(this.ctx, message, source, contextualTask, "owner_marked_done", "owner_marked_done", text, "status_3");
-            }
-            if (/(阻塞|阻塞了)/.test(text) && !/(不|没|未)阻塞/.test(text)) {
-                return await setTaskStatus(this.ctx, message, source, contextualTask, "blocked", "blocked", text, "workflow_suspended");
-            }
-            if (text.startsWith("进度") || (replyContext && replyContext.context_type === "task_confirmation")) {
+            let handledAction = false;
+            if (/(已完成|完成了)/.test(text) && !/(没|不|未)完成/.test(text)) handledAction = true;
+            if (/(阻塞|阻塞了)/.test(text) && !/(不|没|未)阻塞/.test(text)) handledAction = true;
+            if (text.startsWith("进度") || (replyContext && replyContext.context_type === "task_confirmation")) handledAction = true;
+            
+            if (handledAction) {
+                if (contextualTask.status === "deleted") {
+                    const link = contextualTask.tapd_url ? ` <a href="${contextualTask.tapd_url}">查看</a>` : "";
+                    await reply(this.ctx, message, source, `任务「${contextualTask.title}」${link} 已经被删除。`);
+                    return { handled: true, action: "task_deleted" };
+                }
+                if (/(已完成|完成了)/.test(text) && !/(没|不|未)完成/.test(text)) {
+                    return await setTaskStatus(this.ctx, message, source, contextualTask, "owner_marked_done", "owner_marked_done", text, "status_3");
+                }
+                if (/(阻塞|阻塞了)/.test(text) && !/(不|没|未)阻塞/.test(text)) {
+                    return await setTaskStatus(this.ctx, message, source, contextualTask, "blocked", "blocked", text, "workflow_suspended");
+                }
                 return await saveProgress(this.ctx, message, source, contextualTask, text);
             }
         }
@@ -471,7 +518,7 @@ export class MessageHandler {
     }
 
     private async addWorkingReaction(message: SourceMessage): Promise<string | undefined> {
-        const types = ["DONE", "OK", "THUMBSUP"];
+        const types = ["Typing", "TYPING", "Keyboard", "KEYBOARD", "Hacker", "ON_IT", "TODO", "DONE", "OK", "THUMBSUP"];
         const errors = [];
         for (const type of types) {
             const reactionId = await this.ctx.feishu.addReaction(message.id, type);

@@ -11,7 +11,7 @@ export class ContextResolver {
             const context = this.ctx.store.getBotMessageContext(msgId);
             if (context) return context;
             
-            for (const task of this.ctx.store.listTasks()) {
+            for (const task of this.ctx.store.listTasks(true)) {
                 if (task.source_message_id === msgId) {
                     return {
                         context_type: "task_thread",

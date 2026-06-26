@@ -30,7 +30,9 @@ export interface ParsedTaskCommand {
 }
 
 export function hasTaskIntent(text: string): boolean {
-    return TASK_INTENT_KEYWORDS.some(keyword => text.includes(keyword));
+    if (TASK_INTENT_KEYWORDS.some(keyword => text.includes(keyword))) return true;
+    if (/(创建|新建|建|安排|帮我建).+(任务|需求|子任务)/.test(text)) return true;
+    return false;
 }
 
 export function parseTaskCommand(
@@ -100,6 +102,8 @@ export function parseTaskCommand(
 function extractTitle(text: string): string {
     const patterns = [
         /(?:创建任务|创建需求|新建任务|新建需求|任务|需求|创建子任务|新建子任务|子任务)\s*[:：]\s*(.+)/s,
+        /(?:创建|新建|帮我建|建)[一个些]*.*?(?:测试任务|子任务|任务|需求)[，。,\s]+(.+)/s,
+        /(?:创建|新建|帮我建|建)[一个些]*.*?(?:测试任务|子任务|任务|需求)\s*(.+)/s,
         /(?:安排一下|麻烦处理|请完成|负责一下|跟进一下|做一下)\s*(.+)/s,
     ];
     for (const pattern of patterns) {
@@ -184,7 +188,7 @@ function extractAcceptanceCriteria(text: string): string[] {
 function extractPrimaryOwner(text: string, assignees: Mention[]): Mention | null {
     for (const assignee of assignees) {
         if (assignee.name) {
-            const regex = new RegExp(`${escapeRegExp(assignee.name)}\\s*(?:主责|主负责人|owner)`, 'i');
+            const regex = new RegExp(`${escapeRegExp(assignee.name)}[^\\s]*\\s*(?:主责|主负责人|owner|来?负责|来?跟进)`, 'i');
             if (regex.test(text)) return assignee;
         }
     }

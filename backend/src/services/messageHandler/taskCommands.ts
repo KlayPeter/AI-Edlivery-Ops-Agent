@@ -15,7 +15,7 @@ export async function createTaskFromCommand(
         ctx.store.saveTask(task);
         
         const assignees = (command as any).assignee_names ? (command as any).assignee_names.join("、") : command.assignees.map(i => i.name).join("、");
-        const res = await ctx.feishu.sendReplyText(message.id, `已识别到多人任务，请指定主负责人：\n\n任务：${command.title}\n参与人：${assignees}\n\n请回复：主负责人 @某某`);
+        const res = await ctx.feishu.sendReplyText(message.id, `已识别到多人任务，请指定主负责人：\n\n任务：${command.title}\n参与人：${assignees}\n\n请引用本消息并回复：主负责人 @某某`);
         
         if (res.message_id) {
             ctx.store.saveBotMessageContext({

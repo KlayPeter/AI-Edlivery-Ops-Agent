@@ -45,13 +45,22 @@ export class FeishuEventParser {
             .map(m => this._parseMention(m))
             .filter(m => !!m.open_id);
 
+        let rawText = this._extractText(message.content || "");
+        for (const mention of mentions) {
+            if (mention.key && mention.name) {
+                // Feishu keys usually look like "@_user_1", replace them with "@name"
+                const key = mention.key.startsWith("@") ? mention.key : `@${mention.key}`;
+                rawText = rawText.split(key).join(`@${mention.name}`);
+            }
+        }
+
         return {
             id: messageId,
             chat_id: message.chat_id || "",
             chat_type: message.chat_type || "private",
             sender_open_id: senderOpenId,
             sender_name: senderName,
-            text: this._extractText(message.content || ""),
+            text: rawText,
             message_type: message.message_type || "text",
             sent_at: message.create_time || utcNowIso(),
             raw_payload: payload,
@@ -103,13 +112,14 @@ export class FeishuEventParser {
     private _parseMention(raw: any): Mention {
         const mentionId = raw.id || {};
         const openId = raw.open_id || mentionId.open_id || raw.user_id || "";
-        let name = raw.name || raw.key || "";
+        const key = raw.key || "";
+        let name = raw.name || key || "";
         if ((!name || name.startsWith("_user_")) && this.knownNames[openId]) {
             name = this.knownNames[openId];
         } else if (!name || name.startsWith("_user_")) {
             name = "未知成员";
         }
-        return { open_id: openId, name };
+        return { open_id: openId, name, key };
     }
 }
 
@@ -121,9 +131,12 @@ export class FeishuAdapter {
     private tokenCache: string | null = null;
     private tokenExpires: number = 0;
 
-    constructor(config: FeishuConfig, dryRun: boolean = false) {
+    private knownNames: Record<string, string>;
+
+    constructor(config: FeishuConfig, dryRun: boolean = false, knownNames: Record<string, string> = {}) {
         this.config = config;
         this.dryRun = dryRun;
+        this.knownNames = knownNames;
     }
 
     private async _getTenantAccessToken(): Promise<string> {
@@ -385,7 +398,7 @@ export class FeishuAdapter {
     }
 
     parseEvent(payload: any): SourceMessage | null {
-        const parser = new FeishuEventParser(this.config.bot_open_id || "");
+        const parser = new FeishuEventParser(this.config.bot_open_id || "", this.knownNames);
         return parser.parse(payload);
     }
 

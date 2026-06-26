@@ -70,13 +70,8 @@ export async function maybeHandleAiIntent(
             reason = result ? result.action : "unsupported_status_action";
         }
     } else if (intent.intent === "create_task") {
-        const explicitCommand = parseTaskCommand(message.text || "", message.mentions || [], ctx.config.feishu.bot_open_id);
-        if (!explicitCommand.should_create) {
-            reason = "explicit_create_required";
-        } else {
-            result = await createTaskFromAiIntent(ctx, message, intent);
-            reason = result ? result.action : "missing_create_fields";
-        }
+        result = await createTaskFromAiIntent(ctx, message, intent);
+        reason = result ? result.action : "missing_create_fields";
     } else if (intent.intent === "unknown") {
         reason = "unknown";
     }
@@ -173,9 +168,6 @@ async function applyAiStatusAction(ctx: HandlerContext, message: SourceMessage, 
 }
 
 async function createTaskFromAiIntent(ctx: HandlerContext, message: SourceMessage, intent: MessageIntent): Promise<any> {
-    const explicitCommand = parseTaskCommand(message.text || "", message.mentions || [], ctx.config.feishu.bot_open_id);
-    if (!explicitCommand.should_create) return null;
-
     const owner = (openId => ctx.config.groups.flatMap(g => g.members).find(m => m.open_id === openId))(intent.fields.owner_open_id);
     const title = intent.fields.title || intent.task_ref.title;
     if (!owner || !title) {

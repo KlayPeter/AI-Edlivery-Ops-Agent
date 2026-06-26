@@ -40,8 +40,8 @@ export class LLMAdapter {
             try {
                 const { text, usage } = await generateText({
                     model: openai(this.config.model),
-                    messages,
-                    // maxTokens: this.config.max_tokens,
+                    system: systemPrompt,
+                    prompt: userMessage,
                     temperature: this.config.temperature,
                 });
 
