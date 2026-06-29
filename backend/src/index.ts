@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { swagger } from '@elysiajs/swagger';
 import { cors } from '@elysiajs/cors';
+import * as Lark from '@larksuiteoapi/node-sdk';
 import { loadConfig } from './core/config';
 import { JsonStore } from './core/storage';
 import { FeishuAdapter } from './adapters/feishu';
@@ -32,6 +33,23 @@ let llm = new LLMAdapter(config.ai);
 let intentParser = new MessageIntentParser(llm);
 let dashboard = new DashboardService(store, config.data_path, config.project.name, config.runtime.public_base_url);
 let handler = new MessageHandler({ config, store, feishu, tapd, dashboard, intentParser });
+
+const wsClient = new Lark.WSClient({
+    appId: config.feishu.app_id,
+    appSecret: config.feishu.app_secret,
+});
+
+wsClient.start({
+    eventDispatcher: new Lark.EventDispatcher({}).register({
+        'im.message.receive_v1': async (data) => {
+            try {
+                handler.handleEvent({ event: data });
+            } catch (err: any) {
+                store.appendAuditLog("handler_error", { error: String(err) });
+            }
+        }
+    })
+});
 
 const scheduler = new InProcessScheduler(() => handler, 30);
 scheduler.start();
@@ -270,49 +288,6 @@ const app = new Elysia()
             set.status = 500;
             return { error: `任务 ${jobName} 执行失败`, stderr: e.message || String(e) };
         }
-    })
-    .post('/', async ({ body, headers, set }) => {
-        const payload: any = body;
-        if (!payload) {
-            set.status = 400;
-            return { error: 'invalid_json' };
-        }
-        
-        if (payload.type === 'url_verification') {
-            return { challenge: payload.challenge || '' };
-        }
-        
-        const verifyToken = config.feishu?.verify_token;
-        if (verifyToken && payload.token !== verifyToken) {
-            set.status = 403;
-            return { error: 'invalid_verify_token' };
-        }
-        
-        const eventId = payload.header?.event_id || payload.uuid;
-        if (eventId) {
-            const now = Date.now();
-            if (_processedEvents[eventId] && now - _processedEvents[eventId] < 3600000) {
-                return { ok: true, message: 'duplicate event' };
-            }
-            _processedEvents[eventId] = now;
-            
-            if (Object.keys(_processedEvents).length > 1000) {
-                for (const k of Object.keys(_processedEvents)) {
-                    if (now - _processedEvents[k] > 3600000) delete _processedEvents[k];
-                }
-            }
-        }
-        
-        // Handle asynchronously
-        Promise.resolve().then(() => {
-            try {
-                handler.handleEvent(payload);
-            } catch (err: any) {
-                store.appendAuditLog("handler_error", { error: String(err) });
-            }
-        });
-        
-        return { ok: true, message: 'processing in background' };
     })
     .listen(process.env.PORT ? parseInt(process.env.PORT) : 8090);
 
