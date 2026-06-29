@@ -253,7 +253,7 @@ const app = new Elysia()
         const groupId = payload.groupId || '';
         const day = new Date();
         
-        const jobs = new ScheduledJobs(config, store, feishu, dashboard, llm);
+        const jobs = new ScheduledJobs(config, store, feishu, dashboard, tapd, llm);
         try {
             switch (jobName) {
                 case "standup-push": await jobs.standupPush(groupId, day); break;

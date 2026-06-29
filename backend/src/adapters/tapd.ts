@@ -114,6 +114,32 @@ export class TapdAdapter {
         return `https://www.tapd.cn/${this.config.workspace_id}/prong/stories/view/${storyId}`;
     }
 
+    async getStory(storyId: string): Promise<TapdResult> {
+        if (this.dryRun) return { ok: true, raw: {} };
+        return this._get(`/stories?workspace_id=${this.config.workspace_id}&id=${storyId}`);
+    }
+
+    private async _get(path: string): Promise<TapdResult> {
+        const url = `${this.config.api_base.replace(/\/$/, '')}${path}`;
+        try {
+            const resp = await axios.get(url, {
+                headers: {
+                    "Authorization": `Bearer ${this.config.api_token}`,
+                    "Content-Type": "application/json",
+                    "Via": "mcp"
+                },
+                timeout: 60000
+            });
+            return { ok: true, raw: resp.data };
+        } catch (error: any) {
+            if (axios.isAxiosError(error) && error.response) {
+                const body = error.response.data;
+                return { ok: false, raw: { body }, error: `HTTP ${error.response.status}: ${JSON.stringify(body)}` };
+            }
+            return { ok: false, raw: {}, error: String(error) };
+        }
+    }
+
     private async _post(path: string, payload: any): Promise<TapdResult> {
         const url = `${this.config.api_base.replace(/\/$/, '')}${path}`;
         try {

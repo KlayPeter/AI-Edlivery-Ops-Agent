@@ -72,9 +72,14 @@ export async function buildDailySummary(
     }
 
     const messages = sourceMessages.filter(item => inPeriod(item.sent_at || "") && item.chat_id === groupId);
-    const tasks = allTasks
+    
+    const uniqueTasks = new Map<string, any>();
+    allTasks
         .filter(item => inPeriod(item.created_at || "") && itemGroupId(item, sourceMessagesById) === groupId)
-        .map(item => taskSummaryItem(item, sourceMessagesById));
+        .map(item => taskSummaryItem(item, sourceMessagesById))
+        .forEach(item => uniqueTasks.set(item.title, item));
+    const tasks = Array.from(uniqueTasks.values());
+
     const updates = store.listTaskUpdates()
         .filter(item => inPeriod(item.created_at || "") && (itemGroupId(item, sourceMessagesById) === groupId || groupTaskIds.has(item.task_id || "")))
         .map(item => updateSummaryItem(item, sourceMessagesById));
@@ -86,16 +91,29 @@ export async function buildDailySummary(
         .filter(item => item.status === "blocked" && blockedLongEnough(item) && itemGroupId(item, sourceMessagesById) === groupId)
         .map(item => riskSummaryItem(item, sourceMessagesById, "blocker"));
         
-    const blockers = [
+    const uniqueBlockers = new Map<string, any>();
+    [
         ...updates.filter(item => item.type === "blocker" && blockedLongEnough(tasksById[item.task_id || ""])),
         ...taskBlockers,
         ...classified.blockers
-    ];
+    ].forEach(item => {
+        const key = item.title || item.content || item.id;
+        if (!uniqueBlockers.has(key)) uniqueBlockers.set(key, item);
+    });
+    const blockers = Array.from(uniqueBlockers.values());
     
-    const risks = allTasks
+    const uniqueRisks = new Map<string, any>();
+    allTasks
         .filter(item => (item.status === "overdue" || (item.status === "blocked" && blockedLongEnough(item))) && itemGroupId(item, sourceMessagesById) === groupId)
-        .map(item => riskSummaryItem(item, sourceMessagesById));
-    risks.push(...classified.risks);
+        .map(item => riskSummaryItem(item, sourceMessagesById))
+        .forEach(item => uniqueRisks.set(item.title, item));
+        
+    classified.risks.forEach(item => {
+        if (!uniqueRisks.has(item.title)) {
+            uniqueRisks.set(item.title, item);
+        }
+    });
+    const risks = Array.from(uniqueRisks.values());
     
     const highlights = getHighlights(tasks, progressUpdates, blockers, classified.decisions, risks, classified.helps, classified.shares, classified.meetings);
 
@@ -241,7 +259,8 @@ export function renderDailySummary(summary: DailySummary): string {
     lines.push("", "九、需要管理者关注");
     const attention = [...(summary.blockers || []), ...(summary.risks || []), ...(summary.helps || [])];
     if (attention.length > 0) {
-        attention.slice(0, 5).forEach((item, idx) => {
+        const uniqueAttention = Array.from(new Map(attention.map(item => [item.title || item.content || item.id, item])).values());
+        uniqueAttention.slice(0, 5).forEach((item: any, idx) => {
             lines.push(`${idx + 1}. ${item.title || item.content || ''}`);
         });
     } else {

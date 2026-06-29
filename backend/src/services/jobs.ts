@@ -11,14 +11,16 @@ export class ScheduledJobs {
     config: AppConfig;
     store: JsonStore;
     feishu: FeishuAdapter;
-    dashboard: DashboardService;
-    llm?: LLMAdapter;
+    private dashboard: DashboardService;
+    private llm?: LLMAdapter;
+    private tapd: any;
 
-    constructor(config: AppConfig, store: JsonStore, feishu: FeishuAdapter, dashboard: DashboardService, llm?: LLMAdapter) {
+    constructor(config: AppConfig, store: JsonStore, feishu: FeishuAdapter, dashboard: DashboardService, tapd: any, llm?: LLMAdapter) {
         this.config = config;
         this.store = store;
         this.feishu = feishu;
         this.dashboard = dashboard;
+        this.tapd = tapd;
         this.llm = llm;
     }
 
@@ -305,6 +307,31 @@ export class ScheduledJobs {
     }
 
     private async sendDueReminderOnce(task: any, day: Date, scenario: string, text: string): Promise<boolean> {
+        if (task.tapd_story_id) {
+            const tapdResult = await this.tapd.getStory(task.tapd_story_id);
+            if (tapdResult && tapdResult.ok && tapdResult.raw && tapdResult.raw.data) {
+                const stories = tapdResult.raw.data;
+                if (Array.isArray(stories) && stories.length === 0) {
+                    // Deleted on TAPD
+                    task.status = "deleted";
+                    this.store.saveTask(task);
+                    return false;
+                }
+                if (Array.isArray(stories) && stories.length > 0) {
+                    const storyInfo = stories[0].Story || stories[0].story || stories[0];
+                    if (storyInfo && ["resolved", "closed", "rejected", "done"].includes(String(storyInfo.status).toLowerCase())) {
+                        task.status = "accepted";
+                        this.store.saveTask(task);
+                        return false;
+                    }
+                }
+            } else if (tapdResult && !tapdResult.ok && String(tapdResult.error).includes("404")) {
+                task.status = "deleted";
+                this.store.saveTask(task);
+                return false;
+            }
+        }
+
         const reminders = { ...(task.overdue_reminders || {}) };
         const lastSentStr = reminders[scenario];
         if (lastSentStr) {

@@ -14,8 +14,8 @@ export async function applyAction(
         await reply(ctx, message, source, "只有任务负责人可以确认、拒绝或要求澄清该任务。");
         return { handled: true, action: "unauthorized" };
     }
-    if (["验收通过", "打回"].includes(action) && message.sender_open_id !== taskData.creator_open_id) {
-        await reply(ctx, message, source, "只有任务创建人可以验收或打回该任务。");
+    if (["验收通过", "打回", "删除", "取消"].includes(action) && message.sender_open_id !== taskData.creator_open_id && message.sender_open_id !== taskData.primary_owner_open_id) {
+        await reply(ctx, message, source, "只有任务创建人或负责人可以执行该操作。");
         return { handled: true, action: "unauthorized" };
     }
     if (action === "接受") return setTaskStatus(ctx, message, source, taskData, "confirmed", "accepted_by_owner", text, TAPD_STATUS_IN_PROGRESS);
@@ -23,6 +23,8 @@ export async function applyAction(
     if (action === "需要澄清") return requestClarification(ctx, message, source, taskData, text);
     if (action === "验收通过") return setTaskStatus(ctx, message, source, taskData, "accepted", "accepted", text, TAPD_STATUS_DONE);
     if (action === "打回") return setTaskStatus(ctx, message, source, taskData, "in_progress", "reopened", text, TAPD_STATUS_IN_PROGRESS);
+    if (action === "删除") return setTaskStatus(ctx, message, source, taskData, "deleted", "deleted", text, undefined);
+    if (action === "取消") return setTaskStatus(ctx, message, source, taskData, "cancelled", "cancelled", text, TAPD_STATUS_CANCELLED);
     return { handled: false, reason: "unknown_action" };
 }
 

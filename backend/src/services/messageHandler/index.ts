@@ -252,7 +252,7 @@ export class MessageHandler {
         }
 
         const period = targetGroup.daily_summary_period || "00:00-23:59";
-        const jobs = new ScheduledJobs(this.ctx.config, this.ctx.store, this.ctx.feishu, this.ctx.dashboard);
+        const jobs = new ScheduledJobs(this.ctx.config, this.ctx.store, this.ctx.feishu, this.ctx.dashboard, this.ctx.tapd);
         await jobs.backfillGroupMessagesForSummary(targetGroup.chat_id, targetDay.toDate(), period);
         
         const summary = await buildDailySummary(this.ctx.store, targetGroup.chat_id, targetDay.toDate(), this.ctx.intentParser?.llm, period);
@@ -398,7 +398,7 @@ export class MessageHandler {
             }
         }
 
-        const match = /(接受|拒绝|需要澄清|验收通过|打回)\s*([A-Za-z0-9_-]+|\d{6,})/.exec(text);
+        const match = /(接受|拒绝|需要澄清|验收通过|打回|删除|取消)\s*([A-Za-z0-9_-]+|\d{6,})/.exec(text);
         if (match) {
             const action = match[1];
             const identifier = match[2];
@@ -440,7 +440,7 @@ export class MessageHandler {
             return { handled: true, action: "task_context_required" };
         }
 
-        const contextAction = /^\s*(接受|拒绝|需要澄清|验收通过|打回)(?:[:：].+)?\s*$/.exec(text);
+        const contextAction = /^\s*(接受|拒绝|需要澄清|验收通过|打回|删除|取消)(?:[:：].+)?\s*$/.exec(text);
         if (contextAction && contextualTask) {
             if (contextualTask.status === "deleted") {
                 const link = contextualTask.tapd_url ? ` <a href="${contextualTask.tapd_url}">查看</a>` : "";
