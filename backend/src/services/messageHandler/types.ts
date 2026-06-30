@@ -1,5 +1,5 @@
 import type { AppConfig } from '@/core/config';
-import { JsonStore } from '@/core/storage';
+import { PrismaStore } from '@/core/storage';
 import { FeishuAdapter } from '@/adapters/feishu';
 import { TapdAdapter } from '@/adapters/tapd';
 import { DashboardService } from '@/services/dashboard';
@@ -7,7 +7,7 @@ import { MessageIntentParser } from '@/services/messageIntent';
 
 export interface HandlerContext {
     config: AppConfig;
-    store: JsonStore;
+    store: PrismaStore;
     feishu: FeishuAdapter;
     tapd: TapdAdapter;
     dashboard: DashboardService;

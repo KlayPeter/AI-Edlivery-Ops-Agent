@@ -1,21 +1,13 @@
 import { test, expect, describe } from "bun:test";
-import { JsonStore } from '@/core/storage';
-import * as path from "path";
-import * as fs from "fs";
+import { PrismaStore } from '@/core/storage';
 import type { SourceMessage } from '@/models/types';
 
-describe("JsonStore", () => {
-    const testDir = path.join(process.cwd(), "test_data");
-    const store = new JsonStore(testDir);
+describe("PrismaStore", () => {
+    const store = new PrismaStore();
 
-    test("should initialize directories", () => {
-        expect(fs.existsSync(path.join(testDir, "messages"))).toBe(true);
-        expect(fs.existsSync(path.join(testDir, "idempotency.json"))).toBe(true);
-    });
-
-    test("should save and read source message", () => {
+    test("should save and read source message", async () => {
         const msg: SourceMessage = {
-            id: "msg_123",
+            id: "msg_123_test",
             chat_id: "chat_456",
             chat_type: "group",
             sender_open_id: "ou_789",
@@ -26,10 +18,10 @@ describe("JsonStore", () => {
             raw_payload: {}
         };
 
-        store.saveSourceMessage(msg);
-        const readMsg = store.getSourceMessage("msg_123");
+        await store.saveSourceMessage(msg);
+        const readMsg = await store.getSourceMessage("msg_123_test");
         expect(readMsg).not.toBeNull();
-        expect(readMsg.id).toBe("msg_123");
-        expect(readMsg.text).toBe("Hello World");
+        expect(readMsg?.id).toBe("msg_123_test");
+        expect(readMsg?.text).toBe("Hello World");
     });
 });

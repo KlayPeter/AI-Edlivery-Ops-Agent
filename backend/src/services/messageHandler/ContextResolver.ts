@@ -5,13 +5,13 @@ import { findTaskByTitle } from './utils';
 export class ContextResolver {
     constructor(private ctx: HandlerContext) {}
 
-    resolveReplyContext(message: SourceMessage): any {
+    async resolveReplyContext(message: SourceMessage): Promise<any> {
         for (const msgId of [message.parent_id, message.root_id]) {
             if (!msgId) continue;
-            const context = this.ctx.store.getBotMessageContext(msgId);
+            const context = await this.ctx.store.getBotMessageContext(msgId);
             if (context) return context;
             
-            for (const task of this.ctx.store.listTasks(true)) {
+            for (const task of await this.ctx.store.listTasks(true)) {
                 if (task.source_message_id === msgId) {
                     return {
                         context_type: "task_thread",
@@ -25,9 +25,9 @@ export class ContextResolver {
         return null;
     }
 
-    contextualTask(message: SourceMessage, replyContext: any, normalizedText?: string): any {
+    async contextualTask(message: SourceMessage, replyContext: any, normalizedText?: string): Promise<any> {
         if (replyContext && replyContext.task_id) {
-            const task = this.ctx.store.getTask(replyContext.task_id);
+            const task = await this.ctx.store.getTask(replyContext.task_id);
             if (task) return task;
         }
 
@@ -42,7 +42,7 @@ export class ContextResolver {
         if (!hasIntent) return null;
 
         const candidates = [];
-        for (const task of this.ctx.store.listTasks()) {
+        for (const task of await this.ctx.store.listTasks()) {
             if (message.sender_open_id === task.primary_owner_open_id &&
                 ["pending_confirmation", "confirmed", "in_progress", "blocked", "owner_marked_done"].includes(task.status || "")) {
                 candidates.push(task);
@@ -51,9 +51,9 @@ export class ContextResolver {
         return candidates.length === 1 ? candidates[0] : null;
     }
 
-    taskFromReplyContext(replyContext: any): any {
+    async taskFromReplyContext(replyContext: any): Promise<any> {
         if (replyContext && replyContext.task_id) {
-            return this.ctx.store.getTask(replyContext.task_id);
+            return await this.ctx.store.getTask(replyContext.task_id);
         }
         return null;
     }

@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { JsonStore } from '@/core/storage';
+import { PrismaStore } from '@/core/storage';
 import { DashboardArtifact, utcNowIso } from '@/models/types';
 import dayjs from 'dayjs';
 
@@ -29,28 +29,29 @@ function escapeHtml(unsafe: string): string {
 }
 
 export class DashboardService {
-    private store: JsonStore;
+    private store: PrismaStore;
     private dataDir: string;
     private projectName: string;
     private publicBaseUrl: string;
 
-    constructor(store: JsonStore, dataDir: string, projectName: string, publicBaseUrl: string = "") {
+    constructor(store: PrismaStore, dataDir: string, projectName: string, publicBaseUrl: string = "") {
         this.store = store;
         this.dataDir = dataDir;
         this.projectName = projectName;
         this.publicBaseUrl = publicBaseUrl.replace(/\/$/, "");
     }
 
-    generateForGroup(group: any, day: Date = new Date(), highlights?: string[]): DashboardArtifact {
+    async generateForGroup(group: any, day: Date = new Date(), highlights?: string[]): Promise<DashboardArtifact> {
         const dateText = dayjs(day).format('YYYY-MM-DD');
-        const allTasks = this.store.listTasks();
-        const activeTasks = allTasks.filter(t => t.status !== "cancelled" && !t.is_draft && t.source_group_id === group.chat_id);
+        const allTasks = await this.store.listTasks();
+        const activeTasks = allTasks.filter((t: any) => t.status !== "cancelled" && !t.is_draft && t.source_group_id === group.chat_id);
         const tasks = this.sortTasks(activeTasks);
         
         const groupOpenIds = new Set(group.members.map((m: any) => m.open_id));
-        const standups = this.store.listStandups(dateText).filter(s => groupOpenIds.has(s.open_id));
+        const allStandups = await this.store.listStandups(dateText);
+        const standups = allStandups.filter((s: any) => groupOpenIds.has(s.open_id));
         
-        const updates = this.store.listTaskUpdates();
+        const updates = await this.store.listTaskUpdates();
         const stats = this.buildStats(tasks, standups, dateText);
         const resolvedHighlights = highlights || this.defaultHighlights(tasks, standups);
         
@@ -88,7 +89,7 @@ export class DashboardService {
             created_at: utcNowIso(),
             public_url: publicUrl,
         };
-        this.store.saveDashboardArtifact(artifact);
+        await this.store.saveDashboardArtifact(artifact);
         return artifact;
     }
 

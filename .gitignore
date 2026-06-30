@@ -5,8 +5,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .tmp
-docs
 .agent
+
+# Private documentation drafts
+docs/private/
 
 .codegraph
 .data
@@ -17,3 +19,6 @@ docs
 data/**/*.json
 data/**/*.jsonl
 data/**/*.html
+data/*.db
+data/*.db-journal
+data/*.sqlite

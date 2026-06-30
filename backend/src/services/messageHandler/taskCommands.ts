@@ -12,13 +12,13 @@ export async function createTaskFromCommand(
     if (command.missing_primary_owner) {
         const task = buildTask(ctx, message, command, "pending_primary_owner", undefined, undefined, parentId);
         task.is_draft = true;
-        ctx.store.saveTask(task);
+        await ctx.store.saveTask(task);
         
         const assignees = (command as any).assignee_names ? (command as any).assignee_names.join("、") : command.assignees.map(i => i.name).join("、");
         const res = await ctx.feishu.sendReplyText(message.id, `已识别到多人任务，请指定主负责人：\n\n任务：${command.title}\n参与人：${assignees}\n\n请引用本消息并回复：主负责人 @某某`);
         
         if (res.message_id) {
-            ctx.store.saveBotMessageContext({
+            await ctx.store.saveBotMessageContext({
                 message_id: res.message_id,
                 context_type: "pending_primary_owner",
                 created_at: utcNowIso(),
@@ -49,7 +49,7 @@ export async function createTaskFromCommand(
         const parentTask = buildTask(ctx, message, command, "pending_confirmation", tapdStoryId, tapdUrl, parentId);
         parentTask.title = `父任务：${command.title}`;
         parentTask.is_draft = true;
-        ctx.store.saveTask(parentTask);
+        await ctx.store.saveTask(parentTask);
         
         const childIds: string[] = [];
         for (const assignee of command.assignees) {
@@ -99,23 +99,23 @@ export async function createSingleTask(
     );
 
     if (!tapdResult.ok) {
-        ctx.store.appendAuditLog("tapd_create_failed", { message_id: message.id, error: tapdResult.error });
+        await ctx.store.appendAuditLog("tapd_create_failed", { message_id: message.id, error: tapdResult.error });
         await ctx.feishu.sendReplyText(message.id, `任务创建失败：${tapdResult.error || 'TAPD API 调用失败'}`);
         return { handled: true, action: "tapd_create_failed", error: tapdResult.error };
     }
 
     const task = buildTask(ctx, message, command, "pending_confirmation", tapdResult.story_id, tapdResult.url, parentId);
-    ctx.store.saveTask(task);
+    await ctx.store.saveTask(task);
     
-    saveUpdate(ctx, task, message.sender_open_id || "", message.sender_name || "", "created", "任务已创建", "group", message.id);
+    await saveUpdate(ctx, task, message.sender_open_id || "", message.sender_name || "", "created", "任务已创建", "group", message.id);
     
     const privateText = privateConfirmationText(task);
     const privateResult = await ctx.feishu.sendPrivateText(owner.open_id, privateText);
     if (privateResult.chat_id) {
-        ctx.store.updateChatId(owner.open_id, privateResult.chat_id);
+        await ctx.store.updateChatId(owner.open_id, privateResult.chat_id);
     }
     if (privateResult.message_id) {
-        ctx.store.saveBotMessageContext({
+        await ctx.store.saveBotMessageContext({
             message_id: privateResult.message_id,
             context_type: "task_confirmation",
             created_at: utcNowIso(),
@@ -130,7 +130,7 @@ export async function createSingleTask(
 
     const groupResult = await ctx.feishu.sendReplyText(message.id, groupCreatedText(task));
     if (groupResult.message_id) {
-        ctx.store.saveBotMessageContext({
+        await ctx.store.saveBotMessageContext({
             message_id: groupResult.message_id,
             context_type: "task_group_notice",
             created_at: utcNowIso(),
@@ -142,7 +142,7 @@ export async function createSingleTask(
         });
     }
 
-    ctx.store.appendAuditLog("task_created", { task_id: task.id, title: task.title, owner: owner.name, tapd_id: task.tapd_story_id });
+    await ctx.store.appendAuditLog("task_created", { task_id: task.id, title: task.title, owner: owner.name, tapd_id: task.tapd_story_id });
     return { handled: true, action: "task_created", task_id: task.id, tapd_story_id: task.tapd_story_id };
 }
 
@@ -239,7 +239,7 @@ export function groupCreatedText(task: Task): string {
     );
 }
 
-export function saveUpdate(
+export async function saveUpdate(
     ctx: HandlerContext,
     task: Task,
     userOpenId: string,
@@ -249,12 +249,13 @@ export function saveUpdate(
     source: string,
     sourceMessageId?: string,
     metadata?: Record<string, any>
-): void {
-    const sourceMessage = sourceMessageId ? ctx.store.getSourceMessage(sourceMessageId) : undefined;
+): Promise<void> {
+    const sourceMessage = sourceMessageId ? await ctx.store.getSourceMessage(sourceMessageId) : undefined;
     const aiResult = { type: updateType, parser: "structured_event", content };
     const trace = sourceMessage ? sourceTrace(sourceMessage, aiResult, 1.0) : {};
     
-    const count = ctx.store.listTaskUpdates(task.id).length;
+    const updates = await ctx.store.listTaskUpdates(task.id);
+    const count = updates.length;
     const update: TaskUpdate = {
         id: `update-${task.id}-${count + 1}`,
         task_id: task.id || "",
@@ -275,14 +276,14 @@ export function saveUpdate(
         metadata: metadata || {},
         created_at: utcNowIso(),
     };
-    ctx.store.saveTaskUpdate(update);
+    await ctx.store.saveTaskUpdate(update);
 }
 
 export async function notifySourceGroup(ctx: HandlerContext, task: Task, text: string, contextType: string = "task_status_notice"): Promise<void> {
     if (!task.source_message_id) return;
     const res = await ctx.feishu.sendReplyText(task.source_message_id, text);
     if (res.message_id) {
-        ctx.store.saveBotMessageContext({
+        await ctx.store.saveBotMessageContext({
             message_id: res.message_id,
             context_type: contextType,
             created_at: utcNowIso(),

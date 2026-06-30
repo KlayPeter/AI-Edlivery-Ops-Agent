@@ -54,15 +54,15 @@ export function isSystemNoise(text: string): boolean {
     return text.includes("<system-reminder>") || text.includes("<cb_summary>") || text.startsWith("This is a summary");
 }
 
-export function resolvePrivateSender(message: SourceMessage, ctx: HandlerContext) {
+export async function resolvePrivateSender(message: SourceMessage, ctx: HandlerContext) {
     if (message.sender_open_id) return (ctx.config.groups.flatMap(g => g.members).find(m => m.open_id === message.sender_open_id));
-    const openId = ctx.store.openIdForChatId(message.chat_id);
+    const openId = await ctx.store.openIdForChatId(message.chat_id);
     return openId ? (ctx.config.groups.flatMap(g => g.members).find(m => m.open_id === openId)) : undefined;
 }
 
-export function findTaskByTitle(title: string, ctx: HandlerContext): any {
+export async function findTaskByTitle(title: string, ctx: HandlerContext): Promise<any> {
     let deletedMatch = null;
-    for (const task of ctx.store.listTasks(true)) {
+    for (const task of await ctx.store.listTasks(true)) {
         const taskTitle = task.title || "";
         if (taskTitle.includes(title) || title.includes(taskTitle)) {
             if (task.status === "deleted") deletedMatch = task;
@@ -72,10 +72,10 @@ export function findTaskByTitle(title: string, ctx: HandlerContext): any {
     return deletedMatch;
 }
 
-export function findUniqueTaskByTitle(title: string, ctx: HandlerContext): any {
+export async function findUniqueTaskByTitle(title: string, ctx: HandlerContext): Promise<any> {
     const candidates = [];
     let deletedMatch = null;
-    for (const task of ctx.store.listTasks(true)) {
+    for (const task of await ctx.store.listTasks(true)) {
         const taskTitle = task.title || "";
         if (title === taskTitle || title.includes(taskTitle) || taskTitle.includes(title)) {
             if (task.status === "deleted") deletedMatch = task;

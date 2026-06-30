@@ -1,0 +1,166 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model SourceMessage {
+  id              String   @id
+  chat_id         String
+  chat_type       String
+  sender_open_id  String
+  sender_name     String
+  text            String
+  message_type    String
+  sent_at         String
+  raw_payload     String?
+  mentions        String?
+  ai_result       String?
+  confidence      Float?
+  parent_id       String?
+  root_id         String?
+}
+
+model Task {
+  id                    String   @id
+  title                 String
+  creator_open_id       String
+  creator_name          String
+  primary_owner_open_id String
+  primary_owner_name    String
+  assignee_open_ids     String
+  assignee_names        String
+  status                String
+  priority              String
+  source_message_id     String
+  source_group_id       String
+  created_at            String
+  updated_at            String
+  source_sender_open_id String?
+  source_sender_name    String?
+  source_sent_at        String?
+  raw_text              String?
+  ai_result             String?
+  confidence            Float?
+  trace                 String?
+  description           String?
+  due_date              String?
+  acceptance_criteria   String?
+  dependencies          String?
+  related_links         String?
+  tags                  String?
+  task_plan             String?
+  blocked_at            String?
+  blocker_info          String?
+  overdue_reminders     String?
+  tapd_story_id         String?
+  tapd_url              String?
+  parent_id             String?
+  is_draft              Boolean  @default(false)
+}
+
+model TaskUpdate {
+  id                    String   @id
+  task_id               String
+  user_open_id          String
+  user_name             String
+  update_type           String
+  content               String
+  source                String
+  source_message_id     String?
+  created_at            String
+  source_group_id       String?
+  source_sender_open_id String?
+  source_sender_name    String?
+  source_sent_at        String?
+  raw_text              String?
+  ai_result             String?
+  confidence            Float?
+  trace                 String?
+  metadata              String?
+}
+
+model Standup {
+  id                    String   @id
+  open_id               String
+  user_name             String
+  date                  String
+  yesterday_done        String
+  today_plan            String
+  blockers              String
+  risks                 String
+  decisions_needed      String
+  submitted_at          String
+  source_message_id     String?
+  source_group_id       String?
+  source_sender_open_id String?
+  source_sender_name    String?
+  source_sent_at        String?
+  raw_text              String?
+  ai_result             String?
+  confidence            Float?
+  trace                 String?
+}
+
+model DailySummary {
+  id               String   @id
+  group_id         String
+  date             String
+  highlights       String
+  tasks            String
+  progress_updates String
+  blockers         String
+  decisions        String
+  risks            String
+  helps            String
+  shares           String
+  meetings         String
+  created_at       String
+  ai_abstract      String?
+}
+
+model DashboardArtifact {
+  id          String   @id
+  date        String
+  html_path   String
+  stats_path  String
+  created_at  String
+  public_url  String?
+}
+
+model BotMessageContext {
+  message_id     String   @id
+  context_type   String
+  created_at     String
+  chat_id        String?
+  chat_type      String?
+  target_open_id String?
+  task_id        String?
+  task_title     String?
+  metadata       String?
+}
+
+model StandupMissing {
+  date    String   @id
+  payload String
+}
+
+model Idempotency {
+  key   String   @id
+  value String
+}
+
+model ChatIdMapping {
+  open_id String @id
+  chat_id String
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  timestamp   String
+  event_type  String
+  payload     String
+}

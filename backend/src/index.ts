@@ -3,7 +3,7 @@ import { swagger } from '@elysiajs/swagger';
 import { cors } from '@elysiajs/cors';
 import * as Lark from '@larksuiteoapi/node-sdk';
 import { loadConfig } from './core/config';
-import { JsonStore } from './core/storage';
+import { PrismaStore } from './core/storage';
 import { FeishuAdapter } from './adapters/feishu';
 import { TapdAdapter } from './adapters/tapd';
 import { LLMAdapter } from './adapters/llm';
@@ -18,7 +18,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 let config = loadConfig();
-let store = new JsonStore(config.data_path);
+let store = new PrismaStore(config.data_path);
 
 const knownNames: Record<string, string> = {};
 for (const g of config.groups) {
@@ -27,7 +27,7 @@ for (const g of config.groups) {
     }
 }
 let feishu = new FeishuAdapter(config.feishu, false, knownNames);
-feishu.setAuditCallback((action, payload) => store.appendAuditLog(action, payload));
+feishu.setAuditCallback((action, payload) => { store.appendAuditLog(action, payload).catch(console.error); });
 let tapd = new TapdAdapter(config.tapd);
 let llm = new LLMAdapter(config.ai);
 let intentParser = new MessageIntentParser(llm);
@@ -45,7 +45,7 @@ wsClient.start({
             try {
                 handler.handleEvent({ event: data });
             } catch (err: any) {
-                store.appendAuditLog("handler_error", { error: String(err) });
+                store.appendAuditLog("handler_error", { error: String(err) }).catch(console.error);
             }
         }
     })
@@ -137,7 +137,7 @@ const app = new Elysia()
             pageSize
         };
     })
-    .get('/api/contexts', ({ query }) => {
+    .get('/api/contexts', async ({ query }) => {
         const page = parseInt(query.page as string || '1');
         const pageSize = parseInt(query.pageSize as string || '15');
         const contextType = query.contextType as string || '';
@@ -147,7 +147,7 @@ const app = new Elysia()
         const targetOpenId = query.targetOpenId as string || '';
         const groupId = query.groupId as string || '';
         
-        const allContexts = store.listBotMessageContexts();
+        const allContexts = await store.listBotMessageContexts();
         allContexts.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
         
         const filtered = [];
@@ -192,7 +192,7 @@ const app = new Elysia()
             pageSize
         };
     })
-    .get('/api/standups', ({ query }) => {
+    .get('/api/standups', async ({ query }) => {
         const targetDate = query.date as string || dayjs().format('YYYY-MM-DD');
         const groupId = query.groupId as string || '';
         
@@ -204,7 +204,7 @@ const app = new Elysia()
             }
         }
         
-        const submittedStandups = store.listStandups(targetDate);
+        const submittedStandups = await store.listStandups(targetDate);
         const submittedMap: Record<string, any> = {};
         for (const s of submittedStandups) {
             // Need to match group open ids
@@ -282,7 +282,7 @@ const app = new Elysia()
                 case "daily-summary": await jobs.dailySummary(groupId, day); break;
                 case "dashboard": await jobs.dashboardGenerate(groupId, day); break;
             }
-            store.appendAuditLog("job_completed", { job_name: jobName, trigger: "manual" });
+            store.appendAuditLog("job_completed", { job_name: jobName, trigger: "manual" }).catch(console.error);
             return { ok: true, message: `任务 ${jobName} 运行完成` };
         } catch (e: any) {
             set.status = 500;

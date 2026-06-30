@@ -1,5 +1,5 @@
 import { AppConfig } from './config';
-import { JsonStore } from './storage';
+import { PrismaStore } from './storage';
 import { MessageHandler } from '@/services/messageHandler';
 import { ScheduledJobs } from '@/services/jobs';
 import { DashboardService } from '@/services/dashboard';
@@ -92,7 +92,7 @@ export class InProcessScheduler {
             ctx.config.project.name,
             ctx.config.runtime.public_base_url
         );
-        const jobs = new ScheduledJobs(ctx.config, ctx.store, ctx.feishu, dashboard, llm);
+        const jobs = new ScheduledJobs(ctx.config, ctx.store, ctx.feishu, dashboard, ctx.tapd, llm);
         
         switch (jobName) {
             case "standup-push": return await jobs.standupPush(groupId, day);

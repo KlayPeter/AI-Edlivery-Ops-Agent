@@ -1,4 +1,4 @@
-import { JsonStore } from '@/core/storage';
+import { PrismaStore } from '@/core/storage';
 import { LLMAdapter } from '@/adapters/llm';
 import { DailySummary, utcNowIso } from '@/models/types';
 import dayjs from 'dayjs';
@@ -23,7 +23,7 @@ export const STATUS_MAP: Record<string, string> = {
 };
 
 export async function buildDailySummary(
-    store: JsonStore,
+    store: PrismaStore,
     groupId: string,
     day: Date = new Date(),
     llm?: LLMAdapter,
@@ -56,12 +56,12 @@ export async function buildDailySummary(
         return dt.isAfter(startTime) && dt.isBefore(endTime);
     }
 
-    const sourceMessages = store.listSourceMessages();
+    const sourceMessages = await store.listSourceMessages();
     const sourceMessagesById: Record<string, any> = {};
     for (const item of sourceMessages) {
         if (item.id) sourceMessagesById[item.id] = item;
     }
-    const allTasks = store.listTasks().filter(t => t.status !== "deleted");
+    const allTasks = (await store.listTasks()).filter((t: any) => t.status !== "deleted");
     const tasksById: Record<string, any> = {};
     const groupTaskIds = new Set<string>();
     for (const item of allTasks) {
@@ -80,7 +80,7 @@ export async function buildDailySummary(
         .forEach(item => uniqueTasks.set(item.title, item));
     const tasks = Array.from(uniqueTasks.values());
 
-    const updates = store.listTaskUpdates()
+    const updates = (await store.listTaskUpdates())
         .filter(item => inPeriod(item.created_at || "") && (itemGroupId(item, sourceMessagesById) === groupId || groupTaskIds.has(item.task_id || "")))
         .map(item => updateSummaryItem(item, sourceMessagesById));
         
@@ -125,10 +125,10 @@ export async function buildDailySummary(
             if (res.ok && res.content.trim()) {
                 aiAbstract = res.content.trim();
             } else if (!res.ok) {
-                store.appendAuditLog("ai_daily_summary_failed", { date: dateText, stage: "abstract", reason: res.error || "empty_response" });
+                await store.appendAuditLog("ai_daily_summary_failed", { date: dateText, stage: "abstract", reason: res.error || "empty_response" });
             }
         } catch (exc: any) {
-            store.appendAuditLog("ai_daily_summary_failed", { date: dateText, stage: "abstract", reason: String(exc) });
+            await store.appendAuditLog("ai_daily_summary_failed", { date: dateText, stage: "abstract", reason: String(exc) });
         }
     }
 
@@ -285,7 +285,7 @@ function getHighlights(
     return values.slice(0, 5);
 }
 
-async function classifyMessages(messages: any[], llm?: LLMAdapter, store?: JsonStore): Promise<Record<string, any[]>> {
+async function classifyMessages(messages: any[], llm?: LLMAdapter, store?: PrismaStore): Promise<Record<string, any[]>> {
     if (llm) {
         const classified = await classifyMessagesWithAi(messages, llm, store);
         if (classified) return classified;
@@ -310,7 +310,7 @@ function classifyMessagesWithRules(messages: any[]): Record<string, any[]> {
     return result;
 }
 
-async function classifyMessagesWithAi(messages: any[], llm: LLMAdapter, store?: JsonStore): Promise<Record<string, any[]> | null> {
+async function classifyMessagesWithAi(messages: any[], llm: LLMAdapter, store?: PrismaStore): Promise<Record<string, any[]> | null> {
     if (!messages.length) return emptyClassification();
     
     const payload = {
@@ -326,7 +326,7 @@ async function classifyMessagesWithAi(messages: any[], llm: LLMAdapter, store?: 
     
     const result = await llm.chat(system, JSON.stringify(payload));
     if (!result.ok || !result.content.trim()) {
-        if (store) store.appendAuditLog("ai_daily_summary_failed", { stage: "classification", reason: result.error || "empty_response", message_count: messages.length });
+        if (store) await store.appendAuditLog("ai_daily_summary_failed", { stage: "classification", reason: result.error || "empty_response", message_count: messages.length });
         return null;
     }
     
@@ -334,13 +334,13 @@ async function classifyMessagesWithAi(messages: any[], llm: LLMAdapter, store?: 
     try {
         raw = JSON.parse(extractJson(result.content));
     } catch (exc: any) {
-        if (store) store.appendAuditLog("ai_daily_summary_failed", { stage: "classification", reason: `invalid_json: ${exc.message}`, message_count: messages.length });
+        if (store) await store.appendAuditLog("ai_daily_summary_failed", { stage: "classification", reason: `invalid_json: ${exc.message}`, message_count: messages.length });
         return null;
     }
     
     const rawItems = Array.isArray(raw?.items) ? raw.items : (Array.isArray(raw) ? raw : []);
     if (!Array.isArray(rawItems)) {
-        if (store) store.appendAuditLog("ai_daily_summary_failed", { stage: "classification", reason: "items_not_list", message_count: messages.length });
+        if (store) await store.appendAuditLog("ai_daily_summary_failed", { stage: "classification", reason: "items_not_list", message_count: messages.length });
         return null;
     }
     

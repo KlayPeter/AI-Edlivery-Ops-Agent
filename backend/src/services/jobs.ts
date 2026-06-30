@@ -1,5 +1,5 @@
 import { AppConfig } from '@/core/config';
-import { JsonStore } from '@/core/storage';
+import { PrismaStore } from '@/core/storage';
 import { FeishuAdapter } from '@/adapters/feishu';
 import { LLMAdapter } from '@/adapters/llm';
 import { DashboardService } from './dashboard';
@@ -9,13 +9,13 @@ import dayjs from 'dayjs';
 
 export class ScheduledJobs {
     config: AppConfig;
-    store: JsonStore;
+    store: PrismaStore;
     feishu: FeishuAdapter;
     private dashboard: DashboardService;
     private llm?: LLMAdapter;
     private tapd: any;
 
-    constructor(config: AppConfig, store: JsonStore, feishu: FeishuAdapter, dashboard: DashboardService, tapd: any, llm?: LLMAdapter) {
+    constructor(config: AppConfig, store: PrismaStore, feishu: FeishuAdapter, dashboard: DashboardService, tapd: any, llm?: LLMAdapter) {
         this.config = config;
         this.store = store;
         this.feishu = feishu;
@@ -37,9 +37,9 @@ export class ScheduledJobs {
                     `【${group.name || group.chat_id}】每日站会（${dateText}）\n\n${member.name}，请回复以下内容：\n\n【昨日完成】\n1.\n\n【今日计划】\n1.\n\n【阻塞/需要帮助】\n无\n\n【风险/可能延期】\n无\n\n【需要决策】\n无`
                 );
                 
-                if (result.chat_id) this.store.updateChatId(member.open_id, result.chat_id);
+                if (result.chat_id) await this.store.updateChatId(member.open_id, result.chat_id);
                 if (result.message_id) {
-                    this.store.saveBotMessageContext({
+                    await this.store.saveBotMessageContext({
                         message_id: result.message_id,
                         context_type: "standup_prompt",
                         created_at: utcNowIso(),
@@ -65,7 +65,7 @@ export class ScheduledJobs {
 
     private async _standupRemind(groupId: string, day: Date = new Date(), stage: string = "first"): Promise<any> {
         const dateText = dayjs(day).format('YYYY-MM-DD');
-        const missing = this.missingStandupMembers(groupId, day);
+        const missing = await this.missingStandupMembers(groupId, day);
         let count = 0;
         
         const stageText = stage === "second" ? "今日站会仍未提交，如有阻塞也可以直接简要回复，我会帮你记录。" : "今日站会还未提交，请方便时补充一下。";
@@ -75,7 +75,7 @@ export class ScheduledJobs {
             count++;
         }
         
-        this.store.appendAuditLog("standup_reminder_sent", {
+        await this.store.appendAuditLog("standup_reminder_sent", {
             date: dateText,
             stage,
             reminded: count,
@@ -87,28 +87,29 @@ export class ScheduledJobs {
 
     async standupMarkMissing(groupId: string, day: Date = new Date()): Promise<any> {
         const dateText = dayjs(day).format('YYYY-MM-DD');
-        const missing = this.missingStandupMembers(groupId, day);
+        const missing = await this.missingStandupMembers(groupId, day);
         const payload = {
             date: dateText,
             missing: missing.length,
             missing_open_ids: missing.map(m => m.open_id),
             missing_names: missing.map(m => m.name),
         };
-        this.store.saveStandupMissing(dateText, payload);
-        this.store.appendAuditLog("standup_missing_marked", payload);
+        await this.store.saveStandupMissing(dateText, payload);
+        await this.store.appendAuditLog("standup_missing_marked", payload);
         return { missing: missing.length };
     }
 
     async standupSummary(groupId: string, day: Date = new Date()): Promise<any> {
+        const { buildStandupSummaryWithLLM, buildFallbackStandupSummary } = require('./standupLLM');
         const dateText = dayjs(day).format('YYYY-MM-DD');
         let totalSubmitted = 0;
         let totalMissing = 0;
-        const allStandups = this.store.listStandups(dateText);
+        const allStandups = await this.store.listStandups(dateText);
         
         for (const group of this.config.groups.filter(g => g.chat_id === groupId)) {
             const groupOpenIds = new Set(group.members.map(m => m.open_id));
-            const standups = allStandups.filter(s => groupOpenIds.has(s.open_id));
-            const submitted = new Set(standups.map(s => s.open_id));
+            const standups = allStandups.filter((s: any) => groupOpenIds.has(s.open_id));
+            const submitted = new Set(standups.map((s: any) => s.open_id));
             const missing = group.members.filter(m => m.is_active && !submitted.has(m.open_id)).map(m => m.name);
             
             if (standups.length === 0) {
@@ -128,52 +129,14 @@ export class ScheduledJobs {
 
             let sentAi = false;
             if (this.llm) {
-                const payload = JSON.stringify(standups.map(s => ({
-                    name: s.user_name,
-                    yesterday_done: s.yesterday_done || [],
-                    today_plan: s.today_plan || [],
-                    blockers: s.blockers || [],
-                    risks: s.risks || [],
-                    decisions_needed: s.decisions_needed || []
-                })));
-                const prompt = (
-                    `你是研发团队助理，请根据以下 JSON 格式的成员站会提交记录，生成今日站会汇总报告。\n` +
-                    `请严格按照以下格式输出，如果没有相关内容，请在该模块下写“暂无”：\n\n` +
-                    `【今日站会汇总｜${dateText}】\n\n` +
-                    `一、团队今日重点\n` +
-                    `1. xxx\n\n` +
-                    `二、昨日完成\n` +
-                    `- 张三：xxx\n\n` +
-                    `三、今日计划\n` +
-                    `- 张三：xxx\n\n` +
-                    `四、阻塞/需要帮助\n` +
-                    `1. [发起人姓名]：xxx\n` +
-                    `   - 相关人：xxx\n` +
-                    `   - 建议动作：xxx\n\n` +
-                    `五、风险/可能延期\n` +
-                    `1. [发起人姓名]：xxx\n` +
-                    `   - 风险等级：高 / 中 / 低\n` +
-                    `   - 建议动作：xxx\n\n` +
-                    `六、需要决策\n` +
-                    `1. [发起人姓名]：xxx\n` +
-                    `   - 建议决策人：xxx\n\n` +
-                    `请保持格式完全一致，不要输出多余的Markdown代码块符号（如\`\`\`）。`
-                );
-                
-                const res = await this.llm.chat(prompt, payload);
-                if (res.ok && res.content.trim()) {
-                    let text = res.content.trim();
-                    if (text.startsWith("```")) {
-                        const lines = text.split("\n");
-                        if (lines.length > 2) text = lines.slice(1, -1).join("\n").trim();
-                    }
-                    text += `\n\n七、未提交情况\n${missingText}`;
-                    await this.feishu.sendGroupText(text, group.chat_id);
+                const res = await buildStandupSummaryWithLLM(this.llm, standups, dateText, missingText);
+                if (res.ok && res.text) {
+                    await this.feishu.sendGroupText(res.text, group.chat_id);
                     totalSubmitted += standups.length;
                     totalMissing += missing.length;
                     sentAi = true;
                 } else {
-                    this.store.appendAuditLog("ai_standup_summary_failed", {
+                    await this.store.appendAuditLog("ai_standup_summary_failed", {
                         date: dateText,
                         reason: res.error || "empty_response",
                         submitted: standups.length,
@@ -182,25 +145,8 @@ export class ScheduledJobs {
             }
 
             if (!sentAi) {
-                const lines = [`【今日站会汇总｜${dateText}】`, "", "一、团队今日重点", "1. 暂无", "", "二、昨日完成"];
-                for (const item of standups) {
-                    lines.push(`- ${item.user_name}：${(item.yesterday_done || []).join('；') || '暂无'}`);
-                }
-                lines.push("", "三、今日计划");
-                for (const item of standups) {
-                    lines.push(`- ${item.user_name}：${(item.today_plan || []).join('；') || '暂无'}`);
-                }
-                lines.push("", "四、阻塞/需要帮助");
-                const blockers = standups.flatMap(item => (item.blockers || []).map((b: any) => ({ name: item.user_name, item: b })));
-                if (blockers.length) {
-                    blockers.forEach((b, idx) => {
-                        lines.push(`${idx + 1}. ${b.name}：${b.item}`, "   - 相关人：待确认", "   - 建议动作：待确认");
-                    });
-                } else {
-                    lines.push("暂无。");
-                }
-                lines.push("", "五、风险/可能延期", "暂无。", "", "六、需要决策", "暂无。", "", "七、未提交情况", missingText);
-                await this.feishu.sendGroupText(lines.join("\n"), group.chat_id);
+                const fallbackText = buildFallbackStandupSummary(standups, dateText, missingText);
+                await this.feishu.sendGroupText(fallbackText, group.chat_id);
                 totalSubmitted += standups.length;
                 totalMissing += missing.length;
             }
@@ -214,7 +160,7 @@ export class ScheduledJobs {
             const period = group.daily_summary_period || "00:00-23:59";
             await this.backfillGroupMessagesForSummary(group.chat_id, day, period);
             const summary = await buildDailySummary(this.store, group.chat_id, day, this.llm, period);
-            this.store.saveDailySummary(summary);
+            await this.store.saveDailySummary(summary);
             const text = renderDailySummary(summary);
             await this.feishu.sendGroupText(text, group.chat_id);
             summaryIds.push(summary.id);
@@ -225,12 +171,12 @@ export class ScheduledJobs {
     async dashboardGenerate(groupId: string, day: Date = new Date()): Promise<any> {
         const urls = [];
         for (const group of this.config.groups.filter(g => g.chat_id === groupId)) {
-            const artifact = this.dashboard.generateForGroup(group, day);
+            const artifact = await this.dashboard.generateForGroup(group, day);
             const publish = await this.feishu.publishFile(artifact.html_path);
             
             if (publish.url) {
                 artifact.public_url = publish.url;
-                this.store.saveDashboardArtifact(artifact);
+                await this.store.saveDashboardArtifact(artifact);
             }
 
             let text = "";
@@ -246,7 +192,7 @@ export class ScheduledJobs {
             }
 
             await this.feishu.sendGroupText(text, group.chat_id);
-            this.store.appendAuditLog("dashboard_generated", { group_id: group.chat_id, artifact_path: artifact.html_path, public_url: artifact.public_url || "", trigger: "job" });
+            await this.store.appendAuditLog("dashboard_generated", { group_id: group.chat_id, artifact_path: artifact.html_path, public_url: artifact.public_url || "", trigger: "job" });
             urls.push(artifact.public_url || artifact.html_path);
         }
         return { artifacts: urls.join(',') };
@@ -260,8 +206,9 @@ export class ScheduledJobs {
         }
 
         const now = dayjs(day);
+        const tasks = await this.store.listTasks();
         
-        for (const rawTask of this.store.listTasks()) {
+        for (const rawTask of tasks) {
             const due = rawTask.due_date;
             if (!due || ["accepted", "cancelled"].includes(rawTask.status || "")) continue;
             
@@ -283,13 +230,13 @@ export class ScheduledJobs {
                     counts.due_today++;
                 }
             } else if (daysToDue === -1) {
-                const changed = this.markOverdueIfNeeded(rawTask, "overdue_day1");
+                const changed = await this.markOverdueIfNeeded(rawTask, "overdue_day1");
                 if (await this.sendDueReminderOnce(rawTask, day, "overdue_day1", `这个任务已超期 1 天，是否需要更新一下当前进展？\n任务：${rawTask.title}${link}\n原截止时间：${due}`)) {
                     counts.overdue_day1++;
                 }
                 if (changed) rawTask.status = "overdue";
             } else if (daysToDue <= -2) {
-                this.markOverdueIfNeeded(rawTask, "overdue_risk");
+                await this.markOverdueIfNeeded(rawTask, "overdue_risk");
                 if (await this.sendDueReminderOnce(rawTask, day, "overdue_risk", `这个任务已超期超过 2 天，已进入日报和看板风险，请尽快更新进展。\n任务：${rawTask.title}${link}\n原截止时间：${due}`)) {
                     counts.overdue_risk++;
                     const ownerText = this.config.runtime.public_overdue_owners ? `，负责人：${rawTask.primary_owner_name}` : "";
@@ -314,20 +261,20 @@ export class ScheduledJobs {
                 if (Array.isArray(stories) && stories.length === 0) {
                     // Deleted on TAPD
                     task.status = "deleted";
-                    this.store.saveTask(task);
+                    await this.store.saveTask(task);
                     return false;
                 }
                 if (Array.isArray(stories) && stories.length > 0) {
                     const storyInfo = stories[0].Story || stories[0].story || stories[0];
                     if (storyInfo && ["resolved", "closed", "rejected", "done"].includes(String(storyInfo.status).toLowerCase())) {
                         task.status = "accepted";
-                        this.store.saveTask(task);
+                        await this.store.saveTask(task);
                         return false;
                     }
                 }
             } else if (tapdResult && !tapdResult.ok && String(tapdResult.error).includes("404")) {
                 task.status = "deleted";
-                this.store.saveTask(task);
+                await this.store.saveTask(task);
                 return false;
             }
         }
@@ -346,20 +293,21 @@ export class ScheduledJobs {
         
         reminders[scenario] = utcNowIso();
         task.overdue_reminders = reminders;
-        this.store.saveTask(task as Task);
-        this.store.appendAuditLog("overdue_reminder_sent", { task_id: task.id, scenario, due_date: task.due_date });
+        await this.store.saveTask(task as Task);
+        await this.store.appendAuditLog("overdue_reminder_sent", { task_id: task.id, scenario, due_date: task.due_date });
         return true;
     }
 
-    private markOverdueIfNeeded(rawTask: any, reason: string): boolean {
+    private async markOverdueIfNeeded(rawTask: any, reason: string): Promise<boolean> {
         if (rawTask.status === "overdue") return false;
         
         rawTask.status = "overdue";
         rawTask.updated_at = utcNowIso();
         const task = rawTask as Task;
-        this.store.saveTask(task);
+        await this.store.saveTask(task);
         
-        const count = this.store.listTaskUpdates(task.id).length;
+        const updates = await this.store.listTaskUpdates(task.id);
+        const count = updates.length;
         const update: TaskUpdate = {
             id: `update-${task.id}-${count + 1}`,
             task_id: task.id || "",
@@ -380,8 +328,8 @@ export class ScheduledJobs {
             created_at: utcNowIso(),
             metadata: { reason, due_date: task.due_date },
         };
-        this.store.saveTaskUpdate(update);
-        this.store.appendAuditLog("task_status_updated", { task_id: task.id, status: "overdue", update_type: "overdue", reason });
+        await this.store.saveTaskUpdate(update);
+        await this.store.appendAuditLog("task_status_updated", { task_id: task.id, status: "overdue", update_type: "overdue", reason });
         return true;
     }
 
@@ -391,9 +339,10 @@ export class ScheduledJobs {
         return Math.max(hours, 1);
     }
 
-    private missingStandupMembers(groupId: string, day: Date): any[] {
+    private async missingStandupMembers(groupId: string, day: Date): Promise<any[]> {
         const dateText = dayjs(day).format('YYYY-MM-DD');
-        const submitted = new Set(this.store.listStandups(dateText).map(s => s.open_id));
+        const standups = await this.store.listStandups(dateText);
+        const submitted = new Set(standups.map((s: any) => s.open_id));
         const missing: any[] = [];
         
         for (const group of this.config.groups.filter(g => g.chat_id === groupId)) {
@@ -415,7 +364,7 @@ export class ScheduledJobs {
         try {
             history = []; // this.feishu.fetchChatHistory is not fully implemented in adapter
         } catch (exc: any) {
-            this.store.appendAuditLog("daily_summary_history_sync_failed", {
+            await this.store.appendAuditLog("daily_summary_history_sync_failed", {
                 date: dayjs(day).format('YYYY-MM-DD'),
                 chat_id: chatId,
                 reason: String(exc.message || exc),
@@ -427,13 +376,13 @@ export class ScheduledJobs {
         let inserted = 0;
         
         for (const message of history) {
-            const existed = !!this.store.getSourceMessage(message.id);
-            this.store.saveSourceMessage(message);
+            const existed = !!(await this.store.getSourceMessage(message.id));
+            await this.store.saveSourceMessage(message);
             synced++;
             if (!existed) inserted++;
         }
 
-        this.store.appendAuditLog("daily_summary_history_synced", {
+        await this.store.appendAuditLog("daily_summary_history_synced", {
             date: dayjs(day).format('YYYY-MM-DD'),
             chat_id: chatId,
             start_time: startTime.toISOString(),
