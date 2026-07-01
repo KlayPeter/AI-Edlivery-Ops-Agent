@@ -89,7 +89,7 @@ export async function setTaskStatus(
             await notifySourceGroup(ctx, task, `负责人 ${message.sender_name} 已接受任务：${task.title}${tapdErrorMsg}`);
         }
     } else if (updateType === "owner_marked_done") {
-        const link = task.tapd_url ? ` <a href="${task.tapd_url}">查看</a>` : "";
+        const link = task.tapd_url ? `\n🔗 详情：${task.tapd_url}` : "";
         const text = `${task.primary_owner_name} 已标记任务完成，等待创建人验收：${task.title}${link}${tapdErrorMsg}\n可直接引用本消息回复：验收通过 / 打回`;
         const targetChatId = source === "group" ? message.chat_id : task.source_group_id;
         
@@ -111,7 +111,7 @@ export async function setTaskStatus(
             });
         }
     } else {
-        const link = task.tapd_url ? ` <a href="${task.tapd_url}">查看</a>` : "";
+        const link = task.tapd_url ? `\n🔗 详情：${task.tapd_url}` : "";
         await reply(ctx, message, source, `任务状态已更新：${task.title}${link} -> ${status}${tapdErrorMsg}`);
         if (source === "private" && task.source_message_id) {
             const actionText = content.trim() || status;
@@ -126,7 +126,7 @@ export async function setTaskStatus(
 export async function requestClarification(ctx: HandlerContext, message: SourceMessage, source: string, taskData: any, content: string): Promise<any> {
     const task = taskData as Task;
     saveUpdate(ctx, task, message.sender_open_id || "", message.sender_name || "", "clarification_requested", content, source, message.id);
-    const link = task.tapd_url ? ` <a href="${task.tapd_url}">查看</a>` : "";
+    const link = task.tapd_url ? `\n🔗 详情：${task.tapd_url}` : "";
     await reply(ctx, message, source, `已记录澄清请求：${task.title}${link}`);
     
     const notice = `负责人 ${message.sender_name} 对任务提出澄清请求：${task.title}${link}\n回复内容：${content}`;
@@ -143,7 +143,7 @@ export async function requestClarification(ctx: HandlerContext, message: SourceM
 export async function saveProgress(ctx: HandlerContext, message: SourceMessage, source: string, taskData: any, content: string): Promise<any> {
     const task = taskData as Task;
     saveUpdate(ctx, task, message.sender_open_id || "", message.sender_name || "", "progress", content, source, message.id);
-    const link = task.tapd_url ? ` <a href="${task.tapd_url}">查看</a>` : "";
+    const link = task.tapd_url ? `\n🔗 详情：${task.tapd_url}` : "";
     await reply(ctx, message, source, `已记录任务进度：${task.title}${link}`);
     if (source === "private" && task.source_message_id) {
         await notifySourceGroup(ctx, task, `负责人 ${message.sender_name} 更新了任务进度：\n${content}`);
@@ -158,7 +158,7 @@ export async function saveTaskPlan(ctx: HandlerContext, message: SourceMessage, 
     ctx.store.saveTask(task);
     
     saveUpdate(ctx, task, message.sender_open_id || "", message.sender_name || "", "task_plan", content, source, message.id);
-    const link = task.tapd_url ? ` <a href="${task.tapd_url}">查看</a>` : "";
+    const link = task.tapd_url ? `\n🔗 详情：${task.tapd_url}` : "";
     await reply(ctx, message, source, `已保存任务计划：${task.title}${link}`);
     if (source === "private" && task.source_message_id) {
         await notifySourceGroup(ctx, task, `负责人 ${message.sender_name} 补充了任务计划：\n${content}`);
@@ -243,7 +243,7 @@ export async function updateTaskDue(ctx: HandlerContext, message: SourceMessage,
     
     ctx.store.saveTask(task);
     saveUpdate(ctx, task, message.sender_open_id || "", message.sender_name || "", "due_date_updated", `更新截止时间为：${dueDate}`, source, message.id);
-    const link = task.tapd_url ? ` <a href="${task.tapd_url}">查看</a>` : "";
+    const link = task.tapd_url ? `\n🔗 详情：${task.tapd_url}` : "";
     await reply(ctx, message, source, `任务截止时间已更新：${task.title}${link} -> ${dueDate}`);
     
     if (source === "private" && task.source_message_id) {
@@ -256,4 +256,42 @@ export async function updateTaskDue(ctx: HandlerContext, message: SourceMessage,
 export async function reply(ctx: HandlerContext, message: SourceMessage, source: string, text: string): Promise<any> {
     if (source === "group") return ctx.feishu.sendReplyText(message.id, text);
     return ctx.feishu.sendPrivateText(message.sender_open_id || "", text);
+}
+
+export async function updateTaskSupplement(ctx: HandlerContext, message: SourceMessage, source: string, taskData: any, dueDate: string | null, criteria: string[], text: string): Promise<any> {
+    const task = taskData as Task;
+    let updated = false;
+    let supplementMsg = [];
+    
+    if (dueDate && task.due_date !== dueDate) {
+        task.due_date = dueDate;
+        supplementMsg.push(`截止时间更新为：${dueDate}`);
+        updated = true;
+    }
+    
+    if (criteria && criteria.length > 0) {
+        task.acceptance_criteria = Array.from(new Set([...(task.acceptance_criteria || []), ...criteria]));
+        supplementMsg.push(`验收标准补充为：${task.acceptance_criteria.join("；")}`);
+        updated = true;
+    }
+    
+    if (!updated) {
+        await reply(ctx, message, source, "没有识别到需要补充的有效时间或验收标准。");
+        return { handled: true, action: "supplement_ignored" };
+    }
+    
+    task.updated_at = utcNowIso();
+    
+    ctx.store.saveTask(task);
+    const content = supplementMsg.join("\n");
+    saveUpdate(ctx, task, message.sender_open_id || "", message.sender_name || "", "task_supplemented", content, source, message.id);
+    
+    const link = task.tapd_url ? `\n🔗 详情：${task.tapd_url}` : "";
+    await reply(ctx, message, source, `任务信息已补充：${task.title}${link}\n${content}`);
+    
+    if (source === "private" && task.source_message_id) {
+        await notifySourceGroup(ctx, task, `负责人 ${message.sender_name} 补充了任务信息：\n${content}`);
+    }
+    ctx.store.appendAuditLog("task_supplemented", { task_id: task.id, due_date: task.due_date, acceptance_criteria: task.acceptance_criteria });
+    return { handled: true, action: "task_supplemented", task_id: task.id };
 }

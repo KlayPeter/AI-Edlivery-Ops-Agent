@@ -25,6 +25,14 @@ export const EVENT_TYPE_MAP: Record<string, { text: string; color: string }> = {
   tapd_create_failed: { text: 'TAPD创建失败', color: 'red' },
   tapd_update_failed: { text: 'TAPD更新失败', color: 'red' },
   any_user: { text: '未知用户', color: 'volcano' },
+  unknown_user: { text: '未知用户', color: 'volcano' },
+  working_reaction_failed: { text: '表情回应失败', color: 'orange' },
+  task_clarification_requested: { text: '请求澄清', color: 'geekblue' },
+  task_supplemented: { text: '补充任务信息', color: 'magenta' },
+  daily_summary_generated: { text: '生成日报', color: 'green' },
+  daily_summary_history_sync_failed: { text: '历史同步失败', color: 'red' },
+  daily_summary_history_synced: { text: '历史记录同步', color: 'cyan' },
+  task_due_updated: { text: '截止时间更新', color: 'orange' },
 };
 
 export const getEventMapping = (eventType: string) => {

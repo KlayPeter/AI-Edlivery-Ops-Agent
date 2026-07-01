@@ -175,8 +175,8 @@ function extractDueDate(text: string, today: Date): string | null {
     return parseDueDateText(text, today);
 }
 
-function extractAcceptanceCriteria(text: string): string[] {
-    const match = /(?:验收标准|验收|标准|要求)\s*[:：]\s*(.+)/s.exec(text);
+export function extractAcceptanceCriteria(text: string): string[] {
+    const match = /(?:验收标准|验收|标准|要求)\s*(?:[:：]|是)\s*(.+)/s.exec(text);
     if (!match) return [];
     
     let raw = match[1].trim();

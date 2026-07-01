@@ -42,6 +42,7 @@ const wsClient = new Lark.WSClient({
 wsClient.start({
     eventDispatcher: new Lark.EventDispatcher({}).register({
         'im.message.receive_v1': async (data) => {
+            console.log("=== WS Event Received ===", JSON.stringify(data).substring(0, 500));
             try {
                 handler.handleEvent({ event: data });
             } catch (err: any) {
@@ -88,7 +89,7 @@ const app = new Elysia()
         set.status = 404;
         return { error: 'not_found' };
     })
-    .get('/api/logs', ({ query }) => {
+    .get('/api/logs', async ({ query }) => {
         const page = parseInt(query.page as string || '1');
         const pageSize = parseInt(query.pageSize as string || '20');
         const eventType = query.eventType as string || '';
@@ -96,43 +97,48 @@ const app = new Elysia()
         const endDate = query.endDate as string || '';
         const groupId = query.groupId as string || '';
         
-        const logsPath = path.join(config.data_path, 'logs', 'audit.jsonl');
-        if (!fs.existsSync(logsPath)) return { logs: [], total: 0 };
+        let whereClause: any = {};
         
-        const logs: any[] = [];
-        const lines = fs.readFileSync(logsPath, 'utf8').split('\n');
-        
-        for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-                const item = JSON.parse(line);
-                const itemType = item.action || item.event_type;
-                if (eventType) {
-                    if (eventType === 'ai_*') {
-                        if (!String(itemType).startsWith('ai_')) continue;
-                    } else if (itemType !== eventType) {
-                        continue;
-                    }
-                }
-                const ts = item.timestamp || '';
-                if (startDate && ts < startDate) continue;
-                if (endDate && ts > endDate + 'T23:59:59Z') continue;
-                if (groupId) {
-                    const payload = item.payload || {};
-                    const itemGroup = payload.group_id || payload.source_group_id || payload.chat_id;
-                    if (itemGroup !== groupId) continue;
-                }
-                logs.push(item);
-            } catch (e) {}
+        if (eventType) {
+            if (eventType === 'ai_*') {
+                whereClause.event_type = { startsWith: 'ai_' };
+            } else {
+                whereClause.event_type = eventType;
+            }
         }
         
-        logs.reverse();
-        const startIdx = (page - 1) * pageSize;
-        const endIdx = startIdx + pageSize;
+        if (startDate || endDate) {
+            whereClause.timestamp = {};
+            if (startDate) whereClause.timestamp.gte = startDate;
+            if (endDate) whereClause.timestamp.lte = endDate + 'T23:59:59Z';
+        }
+        
+        if (groupId) {
+            whereClause.payload = { contains: groupId };
+        }
+        
+        const total = await store.prisma.auditLog.count({ where: whereClause });
+        const records = await store.prisma.auditLog.findMany({
+            where: whereClause,
+            orderBy: { id: 'desc' },
+            skip: (page - 1) * pageSize,
+            take: pageSize
+        });
+        
+        const logs = records.map(r => {
+            let payload = {};
+            try { payload = JSON.parse(r.payload); } catch (e) {}
+            return {
+                timestamp: r.timestamp,
+                event_type: r.event_type,
+                action: r.event_type,
+                payload
+            };
+        });
         
         return {
-            logs: logs.slice(startIdx, endIdx),
-            total: logs.length,
+            logs,
+            total,
             page,
             pageSize
         };

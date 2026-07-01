@@ -1,5 +1,3 @@
-import { generateText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
 import { AIConfig } from '@/core/config';
 
 export interface LLMResult {
@@ -23,32 +21,46 @@ export class LLMAdapter {
             return { ok: true, content: "", raw: { dry_run: true } };
         }
 
-        const openai = createOpenAI({
-            baseURL: this.config.api_base,
-            apiKey: this.config.api_key,
-        });
-
-        const messages: any[] = [
+        const messages = [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage }
         ];
 
         let lastError = "";
         const attempts = Math.max(1, (this.config.retry_count || 1) + 1);
+        
+        let apiBase = this.config.api_base.replace(/\/+$/, '');
+        if (!apiBase.endsWith('/v1') && apiBase.includes('openai')) {
+            apiBase += '/v1';
+        }
+        const url = `${apiBase}/chat/completions`;
 
         for (let attempt = 0; attempt < attempts; attempt++) {
             try {
-                const { text, usage } = await generateText({
-                    model: openai(this.config.model),
-                    system: systemPrompt,
-                    prompt: userMessage,
-                    temperature: this.config.temperature,
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.config.api_key}`
+                    },
+                    body: JSON.stringify({
+                        model: this.config.model,
+                        messages,
+                        temperature: this.config.temperature,
+                        max_tokens: this.config.max_tokens,
+                    })
                 });
+
+                const data: any = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error?.message || JSON.stringify(data));
+                }
 
                 return {
                     ok: true,
-                    content: text,
-                    raw: { usage }
+                    content: data.choices?.[0]?.message?.content || "",
+                    raw: data
                 };
             } catch (error: any) {
                 lastError = error.message || String(error);

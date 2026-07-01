@@ -208,18 +208,33 @@ export class ScheduledJobs {
         const now = dayjs(day);
         const tasks = await this.store.listTasks();
         
+        const uniqueTasks = [];
+        const seenTaskSignatures = new Set<string>();
+        
         for (const rawTask of tasks) {
             const due = rawTask.due_date;
-            if (!due || ["accepted", "cancelled"].includes(rawTask.status || "")) continue;
+            if (!due || ["accepted", "cancelled", "owner_marked_done", "done", "completed", "deleted"].includes(rawTask.status || "")) continue;
             
             const taskGroupId = rawTask.source_group_id || "";
             if (!riskItems[taskGroupId]) continue;
+            
+            // 对抗式审查：按标题、负责任、截止时间生成签名，去重相同任务，防止因重试或网络延迟导致的重复创建刷屏
+            const sig = `${taskGroupId}-${rawTask.title}-${due}-${rawTask.primary_owner_open_id}`;
+            if (seenTaskSignatures.has(sig)) continue;
+            seenTaskSignatures.add(sig);
+            
+            uniqueTasks.push(rawTask);
+        }
+
+        for (const rawTask of uniqueTasks) {
+            const due = rawTask.due_date;
+            const taskGroupId = rawTask.source_group_id || "";
             
             const dueDate = dayjs(due);
             if (!dueDate.isValid()) continue;
             
             const daysToDue = dueDate.diff(now, 'day');
-            const link = rawTask.tapd_url ? ` <a href="${rawTask.tapd_url}">查看</a>` : "";
+            const link = rawTask.tapd_url ? `\n🔗 详情：${rawTask.tapd_url}` : "";
             
             if (daysToDue === 1) {
                 if (await this.sendDueReminderOnce(rawTask, day, "due_tomorrow", `这个任务明天截止，请确认当前进展和风险。\n任务：${rawTask.title}${link}\n截止时间：${due}`)) {

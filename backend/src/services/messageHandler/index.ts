@@ -26,8 +26,16 @@ export class MessageHandler {
 
         let replyContext = await this.resolver.resolveReplyContext(message);
         
+        const isGroup = message.chat_type === "group";
+        const botMentioned = (message.mentions || []).some(m => m.open_id === this.ctx.config.feishu.bot_open_id);
+        const shouldProcess = !isGroup || botMentioned || !!replyContext;
+        
         const startedAt = Date.now();
-        const reactionId = await this.addWorkingReaction(message);
+        let reactionId: string | undefined = undefined;
+        
+        if (shouldProcess) {
+            reactionId = await this.addWorkingReaction(message);
+        }
         
         try {
             await this.ctx.store.saveSourceMessage(message);
@@ -44,7 +52,7 @@ export class MessageHandler {
                 return { handled: false, reason: "system_noise" };
             }
 
-            if (message.chat_type === "group") {
+            if (isGroup) {
                 return await this.handleGroupMessage(message, replyContext);
             }
             return await this.handlePrivateMessage(message, replyContext);

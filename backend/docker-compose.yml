@@ -10,9 +10,9 @@ services:
     ports:
       - "8090:8090"
     volumes:
-      # 将宿主机上的上一级 data 目录挂载到容器内，保证 SQLite 数据持久化
+      # 将宿主机上的上一级 data 目录挂载到容器内 /app/data
       - ../data:/app/data
-      # 将当前后端目录的环境变量文件挂载到容器内
-      - ./.env:/app/.env
     environment:
       - NODE_ENV=production
+      # 在容器内覆盖 DATABASE_URL 路径，使其正确指向挂载的 /app/data
+      - DATABASE_URL=file:../data/data.db

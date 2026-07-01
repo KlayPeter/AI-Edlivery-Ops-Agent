@@ -2,8 +2,8 @@ import { HandlerContext } from '../types';
 import { SourceMessage, utcNowIso } from '@/models/types';
 import { ContextResolver } from '../ContextResolver';
 import { stripBotMention, findTaskByTitle } from '../utils';
-import { parseDueDateText } from '@/services/taskParser';
-import { applyAction, saveTaskPlan, updateTaskDue, setTaskStatus, saveProgress, reply } from '../statusUpdates';
+import { parseDueDateText, extractAcceptanceCriteria } from '@/services/taskParser';
+import { applyAction, saveTaskPlan, updateTaskDue, setTaskStatus, saveProgress, reply, updateTaskSupplement } from '../statusUpdates';
 import { saveUpdate } from '../taskCommands';
 
 export class StatusUpdateHandler {
@@ -27,7 +27,7 @@ export class StatusUpdateHandler {
                 return { handled: true, action: "task_not_found" };
             }
             if (taskData.status === "deleted") {
-                const link = taskData.tapd_url ? ` <a href="${taskData.tapd_url}">查看</a>` : "";
+                const link = taskData.tapd_url ? `\n🔗 详情：${taskData.tapd_url}` : "";
                 await reply(ctx, message, source, `任务「${taskData.title}」${link} 已经被删除。`);
                 return { handled: true, action: "task_deleted" };
             }
@@ -37,18 +37,33 @@ export class StatusUpdateHandler {
         const contextualTask = await resolver.contextualTask(message, replyContext, text);
         if (contextualTask && replyContext && replyContext.context_type === "task_plan_request") {
             if (contextualTask.status === "deleted") {
-                const link = contextualTask.tapd_url ? ` <a href="${contextualTask.tapd_url}">查看</a>` : "";
+                const link = contextualTask.tapd_url ? `\n🔗 详情：${contextualTask.tapd_url}` : "";
                 await reply(ctx, message, source, `任务「${contextualTask.title}」${link} 已经被删除。`);
                 return { handled: true, action: "task_deleted" };
             }
             return await saveTaskPlan(ctx, message, source, contextualTask, text);
         }
 
+        const supplementMatch = /^\s*补充(.+)/s.exec(text);
+        if (supplementMatch && contextualTask) {
+            const dueDate = parseDueDateText(text) || parseDueDateText("时间" + supplementMatch[1]);
+            const criteria = extractAcceptanceCriteria(text);
+            
+            if (dueDate || criteria.length > 0) {
+                if (contextualTask.status === "deleted") {
+                    const link = contextualTask.tapd_url ? `\n🔗 详情：${contextualTask.tapd_url}` : "";
+                    await reply(ctx, message, source, `任务「${contextualTask.title}」${link} 已经被删除。`);
+                    return { handled: true, action: "task_deleted" };
+                }
+                return await updateTaskSupplement(ctx, message, source, contextualTask, dueDate, criteria, text);
+            }
+        }
+
         const dueRegex = /(?:截止时间|截止|完成时间)\s*(?:设置为|改为|调整为|设为|改到|到|[:：])/;
         const dueDate = (dueRegex.test(text) || (contextualTask && /(?:截止时间|截止|完成时间)\s*(?:设置为|改为|调整为|设为|改到|到|[:：])/.test(text))) ? parseDueDateText(text) : null;
         if (dueDate && contextualTask) {
             if (contextualTask.status === "deleted") {
-                const link = contextualTask.tapd_url ? ` <a href="${contextualTask.tapd_url}">查看</a>` : "";
+                const link = contextualTask.tapd_url ? `\n🔗 详情：${contextualTask.tapd_url}` : "";
                 await reply(ctx, message, source, `任务「${contextualTask.title}」${link} 已经被删除。`);
                 return { handled: true, action: "task_deleted" };
             }
@@ -62,7 +77,7 @@ export class StatusUpdateHandler {
         const contextAction = /^\s*(接受|拒绝|需要澄清|验收通过|打回|删除|取消)(?:[:：].+)?\s*$/.exec(text);
         if (contextAction && contextualTask) {
             if (contextualTask.status === "deleted") {
-                const link = contextualTask.tapd_url ? ` <a href="${contextualTask.tapd_url}">查看</a>` : "";
+                const link = contextualTask.tapd_url ? `\n🔗 详情：${contextualTask.tapd_url}` : "";
                 await reply(ctx, message, source, `任务「${contextualTask.title}」${link} 已经被删除。`);
                 return { handled: true, action: "task_deleted" };
             }
@@ -94,7 +109,7 @@ export class StatusUpdateHandler {
             
             if (handledAction) {
                 if (contextualTask.status === "deleted") {
-                    const link = contextualTask.tapd_url ? ` <a href="${contextualTask.tapd_url}">查看</a>` : "";
+                    const link = contextualTask.tapd_url ? `\n🔗 详情：${contextualTask.tapd_url}` : "";
                     await reply(ctx, message, source, `任务「${contextualTask.title}」${link} 已经被删除。`);
                     return { handled: true, action: "task_deleted" };
                 }
@@ -213,7 +228,7 @@ export class StatusUpdateHandler {
             return { handled: true, action: "task_not_found" };
         }
         if (taskData.status === "deleted") {
-            const link = taskData.tapd_url ? ` <a href="${taskData.tapd_url}">查看</a>` : "";
+            const link = taskData.tapd_url ? `\n🔗 详情：${taskData.tapd_url}` : "";
             await reply(ctx, message, source, `任务「${taskData.title}」${link} 已经被删除。`);
             return { handled: true, action: "task_deleted" };
         }

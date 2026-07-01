@@ -184,8 +184,12 @@ export function renderDailySummary(summary: DailySummary): string {
     lines.push("", "三、阻塞事项");
     if (summary.blockers?.length) {
         summary.blockers.forEach((item, idx) => {
-            const sender = senderName(item);
-            lines.push(`${idx + 1}. ${sender}：${item.title || item.content || ''}`);
+            if (item.status) {
+                lines.push(`${idx + 1}. 【${item.title || ''}】`);
+            } else {
+                const sender = senderName(item);
+                lines.push(`${idx + 1}. ${sender}：${item.title || item.content || ''}`);
+            }
             const ai = item.ai_result || {};
             const related = (ai.related_users || []).join("、") || "待定";
             lines.push(`   - 需要协助人：${related}`);
@@ -212,9 +216,14 @@ export function renderDailySummary(summary: DailySummary): string {
     lines.push("", "五、风险提示");
     if (summary.risks?.length) {
         summary.risks.forEach((item, idx) => {
-            const sender = senderName(item);
-            const statusStr = item.status ? `，当前状态：${STATUS_MAP[item.status] || item.status}` : "";
-            lines.push(`${idx + 1}. ${sender}：${item.title || ''}${statusStr}`);
+            if (item.status) {
+                const statusStr = item.status ? `当前状态：${STATUS_MAP[item.status] || item.status}` : "";
+                lines.push(`${idx + 1}. 【${item.title || ''}】${statusStr ? '，' + statusStr : ''}`);
+            } else {
+                const sender = senderName(item);
+                const statusStr = item.status ? `，当前状态：${STATUS_MAP[item.status] || item.status}` : "";
+                lines.push(`${idx + 1}. ${sender}：${item.title || ''}${statusStr}`);
+            }
             const ai = item.ai_result || {};
             const riskLevel = ai.risk_level || "中";
             lines.push(`   - 风险等级：${riskLevel}`);
@@ -442,7 +451,9 @@ function riskSummaryItem(task: any, messagesById: Record<string, any>, itemType:
 }
 
 function senderName(item: any): string {
-    return item.source_sender_name || item.sender_name || item.creator_name || "未知";
+    let name = item.source_sender_name || item.sender_name || item.creator_name || item.user_name || "未知";
+    if (name.startsWith("ou_")) name = "未知";
+    return name;
 }
 
 function blockedLongEnough(task: any): boolean {

@@ -156,22 +156,21 @@ export const GroupConfigList = ({ form, groups, groupsLoading, originalConfig, g
                               {...restMemberField}
                               name={[memberName, 'name']}
                               rules={[{ required: true, message: '请输入姓名' }]}
-                              style={{ width: 150 }}
+                              style={{ width: 200 }}
                             >
                               <Input placeholder="姓名 (Name)" />
                             </Form.Item>
                             <Form.Item
                               {...restMemberField}
                               name={[memberName, 'open_id']}
-                              rules={[{ required: true, message: '请输入飞书 Open ID' }]}
-                              style={{ width: 300 }}
+                              hidden
                             >
-                              <Input placeholder="飞书 Open ID" />
+                              <Input />
                             </Form.Item>
                             <Form.Item
                               {...restMemberField}
                               name={[memberName, 'role']}
-                              style={{ width: 150 }}
+                              style={{ width: 300 }}
                             >
                               <Input placeholder="角色 (可选)" />
                             </Form.Item>
@@ -179,8 +178,9 @@ export const GroupConfigList = ({ form, groups, groupsLoading, originalConfig, g
                               {...restMemberField}
                               name={[memberName, 'is_active']}
                               valuePropName="checked"
+                              hidden
                             >
-                              <Switch checkedChildren="在职" unCheckedChildren="离职" />
+                              <Switch />
                             </Form.Item>
                             <Button type="link" danger onClick={() => removeMember(memberName)}>删除</Button>
                           </Space>

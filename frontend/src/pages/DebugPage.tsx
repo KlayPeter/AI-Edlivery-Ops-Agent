@@ -44,7 +44,8 @@ const DebugPage = () => {
     try {
       const res = await api.triggerJob(jobId, selectedGroup, false);
       if (res.ok) {
-        message.success(res.message || `任务 ${jobId} 运行完成`);
+        const jobName = JOBS.find(j => j.id === jobId)?.name || jobId;
+        message.success(res.message || `任务【${jobName}】运行完成`);
       } else {
         message.warning(`任务可能未正常启动：${JSON.stringify(res)}`);
       }
