@@ -58,9 +58,17 @@ export const ContextsTable = ({ contexts, loading, pagination, fetchContexts, ap
           }
           return groupTag;
         }
-        
         if (record.target_open_id) {
-          return <Tag color="blue">私聊: {record.target_name || shortId(record.target_open_id)}</Tag>;
+          const privateTag = <Tag color="blue">私聊: {record.target_name || shortId(record.target_open_id)}</Tag>;
+          if (record.source_group_name) {
+            return (
+              <Space direction="vertical" size={2}>
+                {privateTag}
+                <Text type="secondary" style={{ fontSize: '12px' }}>所属群: {record.source_group_name}</Text>
+              </Space>
+            );
+          }
+          return privateTag;
         }
         
         return '-';
@@ -92,6 +100,7 @@ export const ContextsTable = ({ contexts, loading, pagination, fetchContexts, ap
         showSizeChanger: true,
         onChange: (page, pageSize) => fetchContexts(page, pageSize, appliedFilters),
       }}
+      scroll={{ x: 900 }}
       style={{ flex: 1, overflow: 'auto' }}
     />
   );

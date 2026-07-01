@@ -171,6 +171,24 @@ export class ScheduledJobs {
     async dashboardGenerate(groupId: string, day: Date = new Date()): Promise<any> {
         const urls = [];
         for (const group of this.config.groups.filter(g => g.chat_id === groupId)) {
+            const allTasks = await this.store.listTasks();
+            const groupTasks = allTasks.filter((t: any) => t.source_group_id === group.chat_id && t.status !== "deleted" && t.status !== "cancelled" && t.tapd_story_id);
+            for (const task of groupTasks) {
+                try {
+                    const tapdResult = await this.tapd.getStory(task.tapd_story_id);
+                    if (tapdResult && tapdResult.ok && tapdResult.raw && tapdResult.raw.data) {
+                        const stories = tapdResult.raw.data;
+                        if (Array.isArray(stories) && stories.length === 0) {
+                            task.status = "deleted";
+                            await this.store.saveTask(task);
+                        }
+                    } else if (tapdResult && !tapdResult.ok && String(tapdResult.error).includes("404")) {
+                        task.status = "deleted";
+                        await this.store.saveTask(task);
+                    }
+                } catch (e) {}
+            }
+            
             const artifact = await this.dashboard.generateForGroup(group, day);
             const publish = await this.feishu.publishFile(artifact.html_path);
             
@@ -179,17 +197,7 @@ export class ScheduledJobs {
                 await this.store.saveDashboardArtifact(artifact);
             }
 
-            let text = "";
-            if (publish.ok && artifact.public_url) {
-                text = `今日进度看板已生成：\n${artifact.public_url}`;
-                if (publish.warning) text += `\n\n${publish.warning}`;
-            } else if (publish.ok && publish.warning) {
-                text = `今日进度看板已生成，但飞书云盘共享未配置完成：\n${publish.warning}\n本地文件：${artifact.html_path}`;
-            } else if (publish.ok) {
-                text = `今日进度看板已生成：\n${artifact.html_path}`;
-            } else {
-                text = `今日进度看板已生成，但飞书云盘发布失败：\n${this.feishu.explainError(publish)}\n本地文件：${artifact.html_path}`;
-            }
+            let text = `2026-7-1\n今日进度看板已生成：\n详情看http://10.10.1.35:5173/`;
 
             await this.feishu.sendGroupText(text, group.chat_id);
             await this.store.appendAuditLog("dashboard_generated", { group_id: group.chat_id, artifact_path: artifact.html_path, public_url: artifact.public_url || "", trigger: "job" });

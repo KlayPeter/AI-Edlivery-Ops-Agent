@@ -44,7 +44,7 @@ export class DashboardService {
     async generateForGroup(group: any, day: Date = new Date(), highlights?: string[]): Promise<DashboardArtifact> {
         const dateText = dayjs(day).format('YYYY-MM-DD');
         const allTasks = await this.store.listTasks();
-        const activeTasks = allTasks.filter((t: any) => t.status !== "cancelled" && !t.is_draft && t.source_group_id === group.chat_id);
+        const activeTasks = allTasks.filter((t: any) => t.status !== "cancelled" && t.status !== "deleted" && !t.is_draft && t.source_group_id === group.chat_id);
         const tasks = this.sortTasks(activeTasks);
         
         const groupOpenIds = new Set(group.members.map((m: any) => m.open_id));
@@ -322,7 +322,7 @@ export class DashboardService {
 
     private taskRow(task: any): string {
         const link = task.tapd_url || "";
-        const linkHtml = link ? `<a href='${escapeHtml(link)}'>查看</a>` : "";
+        const linkHtml = link ? `<a href='${escapeHtml(link)}' target='_blank' rel='noopener noreferrer'>查看</a>` : "";
         const statusRaw = task.status || "";
         const statusLabel = STATUS_LABELS[statusRaw] || statusRaw;
         return (

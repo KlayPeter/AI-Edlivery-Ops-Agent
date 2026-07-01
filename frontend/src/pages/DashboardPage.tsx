@@ -108,7 +108,11 @@ const DashboardPage = () => {
             })
             .map((d: string) => {
               const match = d.match(/(\d{4}-\d{2}-\d{2})\.html$/);
-              const label = match ? match[1] : d;
+              let label = match ? match[1] : d;
+              const group = groups.find((g: any) => d.includes(g.chat_id));
+              if (group) {
+                label = `${group.name || group.chat_id} ${label}`;
+              }
               return { key: d, label: label };
             })}
           style={{ borderRight: 0 }}

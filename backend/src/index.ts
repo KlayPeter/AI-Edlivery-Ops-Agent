@@ -186,6 +186,15 @@ const app = new Elysia()
             } else if (isGroup) {
                 (ctx as any).chat_name = "其他群聊";
             }
+            
+            try {
+                const meta = typeof ctx.metadata === 'string' ? JSON.parse(ctx.metadata) : (ctx.metadata || {});
+                if (meta.group_id) {
+                    const srcGrp = config.groups.find(g => g.chat_id === meta.group_id);
+                    if (srcGrp) (ctx as any).source_group_name = srcGrp.name;
+                }
+            } catch (e) {}
+            
             filtered.push(ctx);
         }
         
@@ -289,7 +298,7 @@ const app = new Elysia()
                 case "dashboard": await jobs.dashboardGenerate(groupId, day); break;
             }
             store.appendAuditLog("job_completed", { job_name: jobName, trigger: "manual" }).catch(console.error);
-            return { ok: true, message: `任务 ${jobName} 运行完成` };
+            return { ok: true };
         } catch (e: any) {
             set.status = 500;
             return { error: `任务 ${jobName} 执行失败`, stderr: e.message || String(e) };
