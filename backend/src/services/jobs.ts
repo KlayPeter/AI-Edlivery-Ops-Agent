@@ -197,7 +197,7 @@ export class ScheduledJobs {
                 await this.store.saveDashboardArtifact(artifact);
             }
 
-            let text = `2026-7-1\n今日进度看板已生成：\n详情看http://10.10.1.35:5173/`;
+            let text = `2026-7-1\n今日进度看板已生成：\n详情看http://10.10.1.35:15173/`;
 
             await this.feishu.sendGroupText(text, group.chat_id);
             await this.store.appendAuditLog("dashboard_generated", { group_id: group.chat_id, artifact_path: artifact.html_path, public_url: artifact.public_url || "", trigger: "job" });
