@@ -58,6 +58,23 @@ export class ContextResolver {
         return null;
     }
 
+    async resolveRelatedFiles(message: SourceMessage): Promise<{ fileKey?: string, imageKey?: string, messageId: string }[]> {
+        const files: { fileKey?: string, imageKey?: string, messageId: string }[] = [];
+        if (message.file_key || message.image_key) {
+            files.push({ fileKey: message.file_key, imageKey: message.image_key, messageId: message.id });
+        }
+        for (const msgId of [message.parent_id, message.root_id]) {
+            if (!msgId) continue;
+            const parentMsg = await this.ctx.store.getSourceMessage(msgId);
+            if (parentMsg) {
+                if (parentMsg.file_key || parentMsg.image_key) {
+                    files.push({ fileKey: parentMsg.file_key, imageKey: parentMsg.image_key, messageId: msgId });
+                }
+            }
+        }
+        return files;
+    }
+
     shouldConsiderAi(message: SourceMessage, source: string, replyContext: any): boolean {
         if (source === "private") return true;
         if (replyContext) return true;

@@ -2,6 +2,7 @@ import type { AppConfig } from '@/core/config';
 import { PrismaStore } from '@/core/storage';
 import { FeishuAdapter } from '@/adapters/feishu';
 import { TapdAdapter } from '@/adapters/tapd';
+import { EmailAdapter } from '@/adapters/email';
 import { DashboardService } from '@/services/dashboard';
 import { MessageIntentParser } from '@/services/messageIntent';
 
@@ -10,6 +11,7 @@ export interface HandlerContext {
     store: PrismaStore;
     feishu: FeishuAdapter;
     tapd: TapdAdapter;
+    email: EmailAdapter | null;
     dashboard: DashboardService;
     intentParser?: MessageIntentParser;
 }

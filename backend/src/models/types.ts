@@ -39,6 +39,8 @@ export interface SourceMessage {
   confidence?: number | null;
   parent_id?: string | null;
   root_id?: string | null;
+  file_key?: string;
+  image_key?: string;
 }
 
 export interface Task {
@@ -146,6 +148,18 @@ export interface DashboardArtifact {
   stats_path: string;
   created_at: string;
   public_url?: string | null;
+}
+
+export interface MeetingSummaryRecord {
+  id: string;
+  date: string;
+  group_id: string;
+  source_message_id: string;
+  theme?: string | null;
+  summary_file?: string | null;
+  timeline_file?: string | null;
+  email_sent: boolean;
+  created_at: string;
 }
 
 export interface BotMessageContext {

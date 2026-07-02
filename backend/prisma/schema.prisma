@@ -22,6 +22,8 @@ model SourceMessage {
   confidence      Float?
   parent_id       String?
   root_id         String?
+  file_key        String?
+  image_key       String?
 }
 
 model Task {
@@ -163,4 +165,16 @@ model AuditLog {
   timestamp   String
   event_type  String
   payload     String
+}
+
+model MeetingSummaryRecord {
+  id                String   @id
+  date              String
+  group_id          String
+  source_message_id String
+  theme             String?
+  summary_file      String?
+  timeline_file     String?
+  email_sent        Boolean  @default(false)
+  created_at        String
 }

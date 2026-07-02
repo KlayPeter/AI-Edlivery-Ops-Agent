@@ -5,13 +5,14 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .tmp
-.agent
+.agents
 
 # Private documentation drafts
 docs/private/
 
 .codegraph
 .data
+data
 
 .DS_Store
 

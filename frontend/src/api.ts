@@ -76,6 +76,19 @@ export const api = {
     const data = await request(client.get(`/feishu/groups/${chatId}/members`));
     return safeArray(data.members);
   },
+  fetchMeetingSummaries: async (groupId?: string) => {
+    const data = await request(client.get(`/meeting-summaries${groupId ? '?groupId=' + encodeURIComponent(groupId) : ''}`));
+    return safeArray(data.summaries);
+  },
+  fetchMeetingSummaryContent: async (filepath: string) => {
+    const data = await request(client.get(`/meeting-summaries/file/${filepath.split('/').map(encodeURIComponent).join('/')}`));
+    return data;
+  },
+  getMeetingSummaryFileUrl: (filepath: string) => `${API_BASE}/meeting-summaries/file/${filepath.split('/').map(encodeURIComponent).join('/')}`,
+  sendMeetingSummaryEmail: async (id: string) => {
+    const data = await request(client.post(`/meeting-summaries/${id}/send-email`));
+    return data;
+  },
   fetchStandups: (date: string, groupId: string) => request(client.get(`/standups?date=${date}${groupId ? '&groupId=' + encodeURIComponent(groupId) : ''}`)),
   triggerJob: (jobName: string, groupId: string, dryRun = true) => request(client.post(`/jobs/${encodeURIComponent(jobName)}`, { groupId, dryRun })),
 };

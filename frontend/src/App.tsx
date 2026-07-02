@@ -9,6 +9,7 @@ import LogsPage from '@/pages/LogsPage';
 import DebugPage from '@/pages/DebugPage';
 import ContextsPage from '@/pages/ContextsPage';
 import StandupsPage from '@/pages/StandupsPage';
+import MeetingSummariesPage from '@/pages/MeetingSummariesPage';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
             <Route path="logs" element={<LogsPage />} />
             <Route path="debug" element={<DebugPage />} />
             <Route path="contexts" element={<ContextsPage />} />
+            <Route path="meeting-summaries" element={<MeetingSummariesPage />} />
             <Route path="config" element={<ConfigPage />} />
           </Route>
         </Routes>

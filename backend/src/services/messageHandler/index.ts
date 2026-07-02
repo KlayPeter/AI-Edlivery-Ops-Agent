@@ -2,10 +2,12 @@ import { HandlerContext, WORKING_REACTION_MIN_SECONDS } from './types';
 import { SourceMessage } from '@/models/types';
 import { ContextResolver } from './ContextResolver';
 import { isSystemNoise } from './utils';
+import { EmailAdapter } from '@/adapters/email';
 
 // Handlers
 import { DashboardHandler } from './handlers/DashboardHandler';
 import { SummaryHandler } from './handlers/SummaryHandler';
+import { MeetingSummaryHandler } from './handlers/MeetingSummaryHandler';
 import { StandupHandler } from './handlers/StandupHandler';
 import { TaskCommandHandler } from './handlers/TaskCommandHandler';
 import { StatusUpdateHandler } from './handlers/StatusUpdateHandler';
@@ -14,10 +16,12 @@ import { reply } from './statusUpdates';
 export class MessageHandler {
     private ctx: HandlerContext;
     private resolver: ContextResolver;
+    private email: EmailAdapter;
 
     constructor(ctx: HandlerContext) {
         this.ctx = ctx;
         this.resolver = new ContextResolver(ctx);
+        this.email = ctx.config.email && ctx.config.email.enabled ? new EmailAdapter(ctx.config.email) : new EmailAdapter({ enabled: false, host: '', port: 465, secure: true, user: '', pass: '', from_address: '', to_addresses: [] }, true);
     }
 
     async handleEvent(payload: any): Promise<any> {
@@ -87,6 +91,7 @@ export class MessageHandler {
         const handlers = [
             () => SummaryHandler.maybeHandle(this.ctx, message, "group"),
             () => DashboardHandler.maybeHandle(this.ctx, message, "group"),
+            () => MeetingSummaryHandler.maybeHandle(this.ctx, message, "group"),
             () => StatusUpdateHandler.maybeHandle(this.ctx, this.resolver, message, "group", replyContext),
             () => TaskCommandHandler.maybeHandle(this.ctx, this.resolver, message, "group", replyContext)
         ];
@@ -132,6 +137,7 @@ export class MessageHandler {
         // Strategy / Chain of Responsibility Dispatch
         const handlers = [
             () => StandupHandler.maybeHandle(this.ctx, message, "private", replyContext),
+            () => MeetingSummaryHandler.maybeHandle(this.ctx, message, "private"),
             () => TaskCommandHandler.maybeHandle(this.ctx, this.resolver, message, "private", replyContext),
             () => StatusUpdateHandler.maybeHandle(this.ctx, this.resolver, message, "private", replyContext)
         ];

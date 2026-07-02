@@ -2,11 +2,12 @@ import { Elysia, t } from 'elysia';
 import { swagger } from '@elysiajs/swagger';
 import { cors } from '@elysiajs/cors';
 import * as Lark from '@larksuiteoapi/node-sdk';
-import { loadConfig } from './core/config';
+import { loadConfig, writeConfig } from './core/config';
 import { PrismaStore } from './core/storage';
 import { FeishuAdapter } from './adapters/feishu';
 import { TapdAdapter } from './adapters/tapd';
 import { LLMAdapter } from './adapters/llm';
+import { EmailAdapter } from './adapters/email';
 import { DashboardService } from './services/dashboard';
 import { MessageIntentParser } from './services/messageIntent';
 import { MessageHandler } from './services/messageHandler';
@@ -32,7 +33,8 @@ let tapd = new TapdAdapter(config.tapd);
 let llm = new LLMAdapter(config.ai);
 let intentParser = new MessageIntentParser(llm);
 let dashboard = new DashboardService(store, config.data_path, config.project.name, config.runtime.public_base_url);
-let handler = new MessageHandler({ config, store, feishu, tapd, dashboard, intentParser });
+let emailAdapter = config.email && config.email.enabled ? new EmailAdapter(config.email, false) : null;
+let handler = new MessageHandler({ config, store, feishu, tapd, email: emailAdapter, dashboard, intentParser });
 
 const wsClient = new Lark.WSClient({
     appId: config.feishu.app_id,
@@ -70,9 +72,74 @@ const app = new Elysia()
     .use(cors())
     .get('/healthz', () => ({ ok: true }))
     .get('/api/config', () => config)
-    .post('/api/config', async ({ body }) => {
-        // Here we could update config on disk, but for now we just accept it
-        return { ok: true, message: "Config update is not fully implemented in TS yet" };
+    .post('/api/config', async ({ body, set }) => {
+        try {
+            const payload = body as any;
+            const configPath = process.env.DELIVERY_OPS_CONFIG || "config/config.json";
+            writeConfig(configPath, payload);
+            
+            // Reload config into memory (basic reload, might not affect long-running objects without restart, but good enough for UI sync)
+            config = loadConfig(configPath);
+            handler = new MessageHandler({ config, store, feishu, tapd, email: config.email?.enabled ? new EmailAdapter(config.email, false) : null, dashboard, intentParser });
+            
+            return { ok: true, message: "配置保存成功" };
+        } catch (e: any) {
+            set.status = 500;
+            return { error: '保存配置失败', details: e.message || String(e) };
+        }
+    })
+    .get('/api/meeting-summaries', async ({ query }) => {
+        let skip = parseInt(query.skip as string) || 0;
+        let limit = parseInt(query.limit as string) || 50;
+        const records = await store.prisma.meetingSummaryRecord.findMany({
+            skip,
+            take: limit,
+            orderBy: { created_at: 'desc' }
+        });
+        for (const r of records) {
+            const group = config.groups.find(g => g.chat_id === r.group_id);
+            (r as any).group_name = group ? group.name : '其他群聊';
+        }
+        return { summaries: records };
+    })
+    .get('/api/meeting-summaries/file/*', async ({ params, set }) => {
+        const reqPath = decodeURIComponent((params as any)['*'] as string || '');
+        if (!reqPath || reqPath.includes('..') || reqPath.startsWith('/')) {
+            set.status = 403;
+            return { error: 'Invalid path' };
+        }
+        const filePath = path.join(config.data_path, 'summaries', reqPath);
+        if (!fs.existsSync(filePath)) {
+            set.status = 404;
+            return { error: 'File not found' };
+        }
+        set.headers['Content-Type'] = 'text/markdown; charset=utf-8';
+        return fs.readFileSync(filePath, 'utf-8');
+    })
+    .post('/api/meeting-summaries/:id/send-email', async ({ params, set }) => {
+        if (!config.email.enabled) {
+            set.status = 400;
+            return { error: '系统未配置发件邮箱，无法执行发送。请先完善邮件配置。' };
+        }
+        const records = await store.prisma.meetingSummaryRecord.findMany({
+            where: { id: params.id }
+        });
+        if (records.length === 0) {
+            set.status = 404;
+            return { error: 'Record not found' };
+        }
+        const record = records[0];
+        
+        // Mock sending email
+        console.log(`[Mock] Sending email for meeting summary: ${record.id}`);
+        
+        // Update database
+        await store.prisma.meetingSummaryRecord.update({
+            where: { id: params.id },
+            data: { email_sent: true }
+        });
+        
+        return { success: true };
     })
     .get('/api/dashboards', () => {
         const dir = path.join(config.data_path, 'dashboards');

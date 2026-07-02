@@ -54,6 +54,16 @@ export class FeishuEventParser {
             }
         }
 
+        let fileKey: string | undefined;
+        let imageKey: string | undefined;
+        if (message.message_type === "file" || message.message_type === "image") {
+            try {
+                const parsedContent = JSON.parse(message.content || "{}");
+                fileKey = parsedContent.file_key;
+                imageKey = parsedContent.image_key;
+            } catch (e) {}
+        }
+
         return {
             id: messageId,
             chat_id: message.chat_id || "",
@@ -66,7 +76,9 @@ export class FeishuEventParser {
             raw_payload: payload,
             mentions,
             parent_id: message.parent_id,
-            root_id: message.root_id
+            root_id: message.root_id,
+            file_key: fileKey,
+            image_key: imageKey
         };
     }
 
@@ -246,6 +258,20 @@ export class FeishuAdapter {
         }
     }
 
+    async sendReplyFile(messageId: string, filePath: string): Promise<SendResult> {
+        if (this.dryRun) return { ok: true, raw: { dry_run: true, messageId, filePath }, chat_id: undefined };
+        const resolvedPath = path.resolve(filePath);
+        const cmd = [
+            this.config.lark_cli_path, "im", "+messages-reply", "--as", "bot", "--message-id", messageId, "--file", `./${path.basename(resolvedPath)}`
+        ];
+        try {
+            const proc = await this._runWithRetry(cmd, 60000, path.dirname(resolvedPath));
+            return this._resultFromProcess(proc);
+        } catch (e) {
+            return { ok: false, raw: {}, error: String(e) };
+        }
+    }
+
     async addReaction(messageId: string, emojiType: string = WORKING_REACTION_EMOJI_TYPE): Promise<string | null> {
         this.lastReactionError = null;
         if (this.dryRun || !messageId) return null;
@@ -277,6 +303,29 @@ export class FeishuAdapter {
                 timeout: 5000
             });
         } catch (e) {}
+    }
+
+    async downloadResource(messageId: string, fileKey: string, type: 'file' | 'image', destPath: string): Promise<boolean> {
+        if (this.dryRun) return false;
+        try {
+            const token = await this._getTenantAccessToken();
+            const url = `https://open.feishu.cn/open-apis/im/v1/messages/${messageId}/resources/${fileKey}?type=${type}`;
+            const response = await axios.get(url, {
+                headers: { "Authorization": `Bearer ${token}` },
+                responseType: 'stream',
+                timeout: 30000
+            });
+            const fs = require('fs');
+            const writer = fs.createWriteStream(destPath);
+            response.data.pipe(writer);
+            return new Promise((resolve, reject) => {
+                writer.on('finish', () => resolve(true));
+                writer.on('error', () => resolve(false));
+            });
+        } catch (e) {
+            console.error(`[FeishuAdapter] downloadResource error:`, e);
+            return false;
+        }
     }
 
     private async _setPublicPermission(fileToken: string, shareLinkEntity: string): Promise<SendResult> {

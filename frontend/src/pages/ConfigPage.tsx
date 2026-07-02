@@ -8,6 +8,7 @@ import { TapdConfig } from '@/components/config/TapdConfig';
 import { AiModelConfig } from '@/components/config/AiModelConfig';
 import { RuntimeConfig } from '@/components/config/RuntimeConfig';
 import { GroupConfigList } from '@/components/config/GroupConfigList';
+import { EmailConfig } from '@/components/config/EmailConfig';
 const JOBS = [
   { id: 'standup_push', name: '站会首次提醒' },
   { id: 'standup_second_remind', name: '站会再次提醒' },
@@ -243,6 +244,7 @@ const ConfigPage = () => {
 
           <Col span={12}>
             <TapdConfig />
+            <EmailConfig />
             <RuntimeConfig />
             <AiModelConfig />
           </Col>

@@ -4,7 +4,7 @@ import { ContextResolver } from '../ContextResolver';
 import { stripBotMention, findTaskByTitle } from '../utils';
 import { parseDueDateText, extractAcceptanceCriteria } from '@/services/taskParser';
 import { applyAction, saveTaskPlan, updateTaskDue, setTaskStatus, saveProgress, reply, updateTaskSupplement } from '../statusUpdates';
-import { saveUpdate } from '../taskCommands';
+import { saveUpdate, taskDescription, privateConfirmationText, groupCreatedText } from '../taskCommands';
 
 export class StatusUpdateHandler {
     static async maybeHandle(ctx: HandlerContext, resolver: ContextResolver, message: SourceMessage, source: "group" | "private", replyContext: any): Promise<any> {
@@ -161,7 +161,6 @@ export class StatusUpdateHandler {
             is_subtask: false
         };
 
-        const { taskDescription, privateConfirmationText, groupCreatedText } = require('../taskCommands');
         const description = taskDescription(message, command);
         const tapdResult = await ctx.tapd.createStory(
             command.title,

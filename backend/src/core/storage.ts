@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { BotMessageContext, DailySummary, DashboardArtifact, SourceMessage, Standup, Task, TaskUpdate } from '@/models/types';
+import { BotMessageContext, DailySummary, DashboardArtifact, MeetingSummaryRecord, SourceMessage, Standup, Task, TaskUpdate } from '@/models/types';
 
 export class PrismaStore {
     public prisma: PrismaClient;
@@ -41,7 +41,9 @@ export class PrismaStore {
             ai_result: message.ai_result ? JSON.stringify(message.ai_result) : null,
             confidence: message.confidence,
             parent_id: message.parent_id,
-            root_id: message.root_id
+            root_id: message.root_id,
+            file_key: message.file_key,
+            image_key: message.image_key
         };
         await this.prisma.sourceMessage.upsert({
             where: { id: message.id },
@@ -302,6 +304,34 @@ export class PrismaStore {
             update: data,
             create: data
         });
+    }
+
+    async saveMeetingSummaryRecord(record: MeetingSummaryRecord): Promise<void> {
+        const data = {
+            id: record.id,
+            date: record.date,
+            group_id: record.group_id,
+            source_message_id: record.source_message_id,
+            theme: record.theme || null,
+            summary_file: record.summary_file || null,
+            timeline_file: record.timeline_file || null,
+            email_sent: record.email_sent,
+            created_at: record.created_at
+        };
+        await this.prisma.meetingSummaryRecord.upsert({
+            where: { id: record.id },
+            update: data,
+            create: data
+        });
+    }
+
+    async listMeetingSummaryRecords(groupId?: string | null): Promise<any[]> {
+        const where = groupId ? { group_id: groupId } : {};
+        const records = await this.prisma.meetingSummaryRecord.findMany({ 
+            where,
+            orderBy: { created_at: 'desc' }
+        });
+        return records;
     }
 
     async saveBotMessageContext(context: BotMessageContext): Promise<void> {

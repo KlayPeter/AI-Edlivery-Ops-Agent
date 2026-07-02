@@ -70,11 +70,23 @@ export interface RuntimeConfig {
     daily_summary_fetch_page_size: number;
 }
 
+export interface EmailConfig {
+    enabled: boolean;
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string;
+    pass: string;
+    from_address: string;
+    to_addresses: string[];
+}
+
 export interface AppConfig {
     project: ProjectConfig;
     feishu: FeishuConfig;
     tapd: TapdConfig;
     ai: AIConfig;
+    email: EmailConfig;
     runtime: RuntimeConfig;
     groups: GroupConfig[];
     schedule: Record<string, any>;
@@ -149,6 +161,18 @@ export function buildConfig(raw: any, rawPath: string | null = null): AppConfig 
         retry_count: Math.max(0, Number(process.env.AI_RETRY_COUNT || aiRaw.retry_count || 1)),
     };
 
+    const emailRaw = raw.email || {};
+    const email: EmailConfig = {
+        enabled: !!emailRaw.enabled,
+        host: emailRaw.host || "",
+        port: Number(emailRaw.port || 465),
+        secure: emailRaw.secure !== undefined ? !!emailRaw.secure : true,
+        user: emailRaw.user || "",
+        pass: emailRaw.pass || "",
+        from_address: emailRaw.from_address || emailRaw.user || "",
+        to_addresses: Array.isArray(emailRaw.to_addresses) ? emailRaw.to_addresses : [],
+    };
+
     const runtimeRaw = raw.runtime || {};
     const runtime: RuntimeConfig = {
         data_dir: runtimeRaw.data_dir || "data",
@@ -199,6 +223,7 @@ export function buildConfig(raw: any, rawPath: string | null = null): AppConfig 
         feishu,
         tapd,
         ai,
+        email,
         runtime,
         groups,
         schedule,

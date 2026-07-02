@@ -1,7 +1,7 @@
 import React from 'react';
 import { Layout, Menu } from 'antd';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
-import { DashboardOutlined, UnorderedListOutlined, CheckSquareOutlined, CodeOutlined, DatabaseOutlined, SettingOutlined } from '@ant-design/icons';
+import { DashboardOutlined, UnorderedListOutlined, CheckSquareOutlined, CodeOutlined, DatabaseOutlined, SettingOutlined, FileTextOutlined } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
 
@@ -34,6 +34,11 @@ export const MainLayout: React.FC = () => {
       key: '/contexts',
       icon: <DatabaseOutlined />,
       label: '上下文记忆',
+    },
+    {
+      key: '/meeting-summaries',
+      icon: <FileTextOutlined />,
+      label: '会议纪要',
     },
     {
       key: '/config',

@@ -312,7 +312,18 @@ export class ScheduledJobs {
         }
         
         const owner = task.primary_owner_open_id || "";
-        await this.feishu.sendPrivateText(owner, text);
+        const sendRes = await this.feishu.sendPrivateText(owner, text);
+        
+        if (sendRes.ok && sendRes.message_id) {
+            await this.store.saveBotMessageContext({
+                message_id: sendRes.message_id,
+                context_type: "task_thread",
+                target_open_id: owner,
+                task_id: task.id,
+                task_title: task.title,
+                created_at: utcNowIso()
+            });
+        }
         
         reminders[scenario] = utcNowIso();
         task.overdue_reminders = reminders;
