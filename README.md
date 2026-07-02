@@ -72,16 +72,36 @@ pnpm dev
 
 ---
 
-## 🐳 Docker 生产环境部署 (Deployment)
+## 🐳 服务器生产环境部署 (Deployment)
 
-如果你准备将项目部署到服务器上正式使用，强烈推荐使用 **Docker** 一键启动，无需在服务器上手动配置各种环境。
+如果你准备将项目部署到服务器上正式使用，强烈推荐后端使用 **Docker** 一键启动，前端使用 **Nginx** 静态托管。
 
+### 1. 后端部署 (Docker)
+进入 `backend` 目录，配置好 `.env` 文件后，直接启动：
 ```bash
 cd backend
+cp .env.example .env  # 记得填写真实密钥
 docker-compose up -d --build
 ```
+> **提示**：后端默认运行在 **8090** 端口。Docker 编排配置已自动将宿主机的 `data` 目录映射进容器中，重装或重启都不会丢失任何业务数据（如会议纪要、工单历史）。
 
-> **提示**：Docker 编排配置已自动将宿主机的 `data` 目录与 `.env` 环境变量映射进容器中，重装或重启都不会丢失任何业务数据。详细指令请参考 [Backend README](backend/README.md) 或 [部署规范](docs/项目部署与开发协作流程.md)。
+### 2. 前端部署 (Nginx 静态托管)
+前端编译为纯静态文件，需要先指定后端的 API 地址，然后再打包：
+```bash
+cd frontend
+echo "VITE_API_BASE=http://<你的服务器IP>:8090/api" > .env.production
+pnpm install
+pnpm build
+```
+打包成功后，将 `frontend/dist` 目录下的所有文件拷贝到服务器的 Nginx 发布目录（例如 `/var/www/html`），并确保 Nginx 配置了单页路由（SPA）的回退：
+```nginx
+location / {
+    root /var/www/html;
+    index index.html;
+    try_files $uri $uri/ /index.html;
+}
+```
+配置完成后，直接访问你的服务器 IP（默认 80 端口）即可打开强大的管理控制台！
 
 ---
 
