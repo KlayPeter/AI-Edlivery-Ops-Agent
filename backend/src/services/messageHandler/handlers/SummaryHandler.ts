@@ -11,7 +11,7 @@ export class SummaryHandler {
 
         const text = message.text || "";
         const hasSummaryKeyword = ["日报", "日总结", "群聊总结", "研发总结", "每日总结"].some(k => text.includes(k));
-        const hasAction = ["生成", "发", "查看", "看看", "给我", "来一份", "补", "拉", "汇总"].some(k => text.includes(k));
+        const hasAction = ["生成", "发", "查看", "看看", "给我", "来一份", "补", "拉", "汇总", "总结"].some(k => text.includes(k));
         
         if (!hasSummaryKeyword || !hasAction) return null;
 
