@@ -64,18 +64,18 @@ export class InProcessScheduler {
                 const dateIso = dayjs(now).format('YYYY-MM-DD');
                 const key = `scheduled:${jobName}:${groupId}:${dateIso}:${scheduledTime}`;
                 
-                if (ctx.store.hasIdempotencyKey(key)) continue;
+                if (await ctx.store.hasIdempotencyKey(key)) continue;
                 
-                ctx.store.setIdempotencyKey(key, { started_at: utcNowIso(), job_name: jobName, group_id: groupId });
+                await ctx.store.setIdempotencyKey(key, { started_at: utcNowIso(), job_name: jobName, group_id: groupId });
                 
                 try {
                     const payload = await this.runJob(handler, jobName, groupId, now);
-                    ctx.store.setIdempotencyKey(key, { completed_at: utcNowIso(), job_name: jobName, group_id: groupId, result: payload });
-                    ctx.store.appendAuditLog("job_completed", { job_name: jobName, group_id: groupId, trigger: "scheduler", result: payload });
+                    await ctx.store.setIdempotencyKey(key, { completed_at: utcNowIso(), job_name: jobName, group_id: groupId, result: payload });
+                    await ctx.store.appendAuditLog("job_completed", { job_name: jobName, group_id: groupId, trigger: "scheduler", result: payload });
                     results[`${jobName}:${groupId}`] = "completed";
                 } catch (exc: any) {
-                    ctx.store.setIdempotencyKey(key, { failed_at: utcNowIso(), job_name: jobName, group_id: groupId, error: exc.message || String(exc) });
-                    ctx.store.appendAuditLog("job_failed", { job_name: jobName, group_id: groupId, trigger: "scheduler", error: exc.message || String(exc) });
+                    await ctx.store.setIdempotencyKey(key, { failed_at: utcNowIso(), job_name: jobName, group_id: groupId, error: exc.message || String(exc) });
+                    await ctx.store.appendAuditLog("job_failed", { job_name: jobName, group_id: groupId, trigger: "scheduler", error: exc.message || String(exc) });
                     results[`${jobName}:${groupId}`] = "failed";
                 }
             }
