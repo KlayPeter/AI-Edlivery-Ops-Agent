@@ -12,6 +12,8 @@ services:
     volumes:
       # 将宿主机上的上一级 data 目录挂载到容器内 /app/data
       - ../data:/app/data
+      # 将宿主机的 config 目录挂载，以持久化前端配置页面生成的 config.json
+      - ../config:/app/config
     environment:
       - NODE_ENV=production
       # 在容器内覆盖 DATABASE_URL 路径，使其正确指向挂载的 /app/data

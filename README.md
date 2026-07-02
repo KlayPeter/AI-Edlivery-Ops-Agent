@@ -68,7 +68,7 @@ cd frontend
 pnpm install
 pnpm dev
 ```
-打开终端提示的地址（如 `http://localhost:5173`），即可通过图形化 UI 进行所有底层系统的配置。
+打开终端提示的地址（如 `http://localhost:15173`），即可通过图形化 UI 进行所有底层系统的配置。
 
 ---
 
@@ -77,10 +77,10 @@ pnpm dev
 如果你准备将项目部署到服务器上正式使用，强烈推荐后端使用 **Docker** 一键启动，前端使用 **Nginx** 静态托管。
 
 ### 1. 后端部署 (Docker)
-进入 `backend` 目录，配置好 `.env` 文件后，直接启动：
+进入 `backend` 目录，准备好基础的配置文件后，直接启动：
 ```bash
 cd backend
-cp .env.example .env  # 记得填写真实密钥
+cp ../config/config.example.json ../config/config.json  # 初次启动请复制一份配置文件
 docker-compose up -d --build
 ```
 > **提示**：后端默认运行在 **8090** 端口。Docker 编排配置已自动将宿主机的 `data` 目录映射进容器中，重装或重启都不会丢失任何业务数据（如会议纪要、工单历史）。
